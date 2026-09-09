@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use gpui::{Entity, EventEmitter, SharedString, Subscription, Window, prelude::*};
+use gpui::{App, Entity, EventEmitter, SharedString, Subscription, Window, prelude::*};
 use gpui_kit::component::{
     IndexPath,
     select::{Select as KitSelect, SelectEvent as KitSelectEvent, SelectItem, SelectState},
@@ -95,6 +95,16 @@ impl Select {
             state,
             _subscription: subscription,
         }
+    }
+
+    pub fn selected_index(&self, cx: &App) -> Option<usize> {
+        self.state.read(cx).selected_value().copied()
+    }
+
+    pub fn set_selected_index(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            state.set_selected_index(Some(IndexPath::new(index)), window, cx);
+        });
     }
 }
 

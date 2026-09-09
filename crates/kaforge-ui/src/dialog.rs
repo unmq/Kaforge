@@ -50,6 +50,7 @@ pub struct Dialog {
     button_props: Option<DialogButtonProps>,
     overlay_closable: Option<bool>,
     width: Option<Pixels>,
+    max_height: Option<Pixels>,
     alert: bool,
     ok_text: Option<SharedString>,
     cancel_text: Option<SharedString>,
@@ -165,6 +166,13 @@ impl Dialog {
         self
     }
 
+    /// Cap the dialog panel so the built-in body scrollbar engages.
+    /// Apply this on the panel, not on a nested `max_h` wrapper.
+    pub fn max_h(mut self, max_height: impl Into<Pixels>) -> Self {
+        self.max_height = Some(max_height.into());
+        self
+    }
+
     /// Switches to `AlertDialog` mode (centered footer, no close button).
     pub fn alert(mut self) -> Self {
         self.alert = true;
@@ -192,6 +200,7 @@ impl Dialog {
         let button_props = self.button_props;
         let overlay_closable = self.overlay_closable;
         let width = self.width;
+        let max_height = self.max_height;
         let ok_text = self.ok_text;
         let cancel_text = self.cancel_text;
         let non_alert_footer = if !self.alert && ok_text.is_some() {
@@ -214,6 +223,9 @@ impl Dialog {
 
                 if let Some(w) = width {
                     d = d.w(w);
+                }
+                if let Some(mh) = max_height {
+                    d = d.max_h(mh);
                 }
                 if let Some(ref bp) = button_props {
                     d = d.button_props(bp.clone());

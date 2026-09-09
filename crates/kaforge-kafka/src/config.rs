@@ -67,6 +67,15 @@ pub enum SaslMechanism {
 }
 
 impl SaslMechanism {
+    pub const ALL: [Self; 6] = [
+        Self::Plain,
+        Self::ScramSha256,
+        Self::ScramSha512,
+        Self::Gssapi,
+        Self::Oauthbearer,
+        Self::AwsMskIam,
+    ];
+
     pub fn as_rdkafka(self) -> &'static str {
         match self {
             Self::Plain => "PLAIN",
@@ -75,6 +84,21 @@ impl SaslMechanism {
             Self::Gssapi => "GSSAPI",
             Self::Oauthbearer | Self::AwsMskIam => "OAUTHBEARER",
         }
+    }
+
+    pub fn king_label(self) -> &'static str {
+        match self {
+            Self::Plain => "PLAIN",
+            Self::ScramSha256 => "SCRAM-SHA-256",
+            Self::ScramSha512 => "SCRAM-SHA-512",
+            Self::Gssapi => "GSSAPI",
+            Self::Oauthbearer => "OAUTHBEARER (static token)",
+            Self::AwsMskIam => "AWS MSK IAM",
+        }
+    }
+
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|m| *m == self).unwrap_or(0)
     }
 
     pub fn from_king(name: &str) -> Self {
@@ -114,6 +138,19 @@ impl ConnectionConfig {
             self.bootstrap_servers.as_str()
         } else {
             self.name.as_str()
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SaslMechanism;
+
+    #[test]
+    fn mechanism_index_matches_all() {
+        for (i, mech) in SaslMechanism::ALL.iter().copied().enumerate() {
+            assert_eq!(mech.index(), i);
+            assert_eq!(SaslMechanism::ALL[mech.index()], mech);
         }
     }
 }

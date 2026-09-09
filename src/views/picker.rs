@@ -15,17 +15,19 @@
 use crate::connections;
 use crate::states::{NotificationAction, dialog_button_props, i18n_common, i18n_kafka, notify};
 use crate::workspace::Workspace;
-use gpui::{App, ClipboardItem, Entity, WeakEntity, Window, div, prelude::*, px};
+use gpui::{App, ClipboardItem, Div, Entity, SharedString, WeakEntity, Window, div, prelude::*, px};
 use gpui_kit::component::{
     ActiveTheme, StyledExt,
     button::{Button, ButtonVariants},
+    checkbox::Checkbox,
     h_flex,
     input::{Input, InputState, Textarea, TextareaState},
     label::Label,
+    switch::Switch,
     v_flex,
 };
 use kaforge_kafka::{ConnectionConfig, ConnectionHandle, SaslMechanism, prepare_config};
-use kaforge_ui::Dialog;
+use kaforge_ui::{Dialog, Select};
 
 pub struct ConnectionPicker {
     workspace: WeakEntity<Workspace>,
@@ -34,7 +36,7 @@ pub struct ConnectionPicker {
     sasl_user: Entity<InputState>,
     sasl_pwd: Entity<InputState>,
     sr_url: Entity<InputState>,
-    mechanism: Entity<InputState>,
+    mechanism: Entity<Select>,
     ssh_host: Entity<InputState>,
     ssh_user: Entity<InputState>,
     kerberos: Entity<InputState>,
@@ -42,12 +44,15 @@ pub struct ConnectionPicker {
     webhook: Entity<InputState>,
     yaml: Entity<TextareaState>,
     tls: bool,
+    skip_tls: bool,
+    sasl: bool,
     ssh: bool,
     selected: Option<String>,
 }
 
 impl ConnectionPicker {
     pub fn new(workspace: Entity<Workspace>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let labels = SaslMechanism::ALL.iter().map(|m| m.king_label().to_string()).collect();
         Self {
             workspace: workspace.downgrade(),
             name: cx.new(|cx| InputState::new(window, cx).placeholder("prod")),
@@ -55,9 +60,7 @@ impl ConnectionPicker {
             sasl_user: cx.new(|cx| InputState::new(window, cx).placeholder("user")),
             sasl_pwd: cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("password")),
             sr_url: cx.new(|cx| InputState::new(window, cx).placeholder("http://localhost:8081")),
-            mechanism: cx.new(|cx| {
-                InputState::new(window, cx).placeholder("PLAIN / SCRAM-SHA-512 / GSSAPI / OAUTHBEARER / AWS-MSK-IAM")
-            }),
+            mechanism: cx.new(|cx| Select::new(labels, Some(0), window, cx)),
             ssh_host: cx.new(|cx| InputState::new(window, cx).placeholder("bastion.example")),
             ssh_user: cx.new(|cx| InputState::new(window, cx).placeholder("ec2-user")),
             kerberos: cx.new(|cx| InputState::new(window, cx).placeholder("kafka/principal@REALM")),
@@ -65,6 +68,8 @@ impl ConnectionPicker {
             webhook: cx.new(|cx| InputState::new(window, cx).placeholder("https://hooks.example/lag")),
             yaml: cx.new(|cx| TextareaState::new(window, cx)),
             tls: false,
+            skip_tls: false,
+            sasl: false,
             ssh: false,
             selected: None,
         }
@@ -75,6 +80,43 @@ impl ConnectionPicker {
             .upgrade()
             .map(|w| w.read(cx).saved.clone())
             .unwrap_or_default()
+    }
+
+    fn mechanism(&self, cx: &App) -> SaslMechanism {
+        self.mechanism
+            .read(cx)
+            .selected_index(cx)
+            .and_then(|i| SaslMechanism::ALL.get(i).copied())
+            .unwrap_or_default()
+    }
+
+    fn load_cfg(&mut self, cfg: &ConnectionConfig, window: &mut Window, cx: &mut Context<Self>) {
+        self.name.update(cx, |input, cx| input.set_value(&cfg.name, window, cx));
+        self.bootstrap
+            .update(cx, |input, cx| input.set_value(&cfg.bootstrap_servers, window, cx));
+        self.sasl_user
+            .update(cx, |input, cx| input.set_value(&cfg.sasl_user, window, cx));
+        self.sasl_pwd
+            .update(cx, |input, cx| input.set_value(&cfg.sasl_password, window, cx));
+        self.sr_url
+            .update(cx, |input, cx| input.set_value(&cfg.sr.url, window, cx));
+        let idx = cfg.sasl_mechanism.index();
+        self.mechanism
+            .update(cx, |sel, cx| sel.set_selected_index(idx, window, cx));
+        self.ssh_host
+            .update(cx, |input, cx| input.set_value(&cfg.ssh_host, window, cx));
+        self.ssh_user
+            .update(cx, |input, cx| input.set_value(&cfg.ssh_user, window, cx));
+        self.kerberos
+            .update(cx, |input, cx| input.set_value(&cfg.kerberos_principal, window, cx));
+        self.msk_region
+            .update(cx, |input, cx| input.set_value(&cfg.msk_region, window, cx));
+        self.webhook
+            .update(cx, |input, cx| input.set_value(&cfg.monitor_webhook, window, cx));
+        self.tls = cfg.tls;
+        self.skip_tls = cfg.skip_tls_verify;
+        self.sasl = cfg.sasl;
+        self.ssh = cfg.ssh;
     }
 
     fn save_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -90,9 +132,11 @@ impl ConnectionPicker {
         cfg.bootstrap_servers = self.bootstrap.read(cx).value().to_string();
         cfg.sasl_user = self.sasl_user.read(cx).value().to_string();
         cfg.sasl_password = self.sasl_pwd.read(cx).value().to_string();
-        cfg.sasl = !cfg.sasl_user.is_empty();
+        cfg.sasl = self.sasl;
+        cfg.sasl_mechanism = self.mechanism(cx);
         cfg.sr.url = self.sr_url.read(cx).value().to_string();
         cfg.tls = self.tls;
+        cfg.skip_tls_verify = self.skip_tls;
         cfg.ssh = self.ssh;
         cfg.ssh_host = self.ssh_host.read(cx).value().to_string();
         cfg.ssh_user = self.ssh_user.read(cx).value().to_string();
@@ -101,13 +145,6 @@ impl ConnectionPicker {
         cfg.monitor_webhook = self.webhook.read(cx).value().to_string();
         if cfg.monitor_lag_threshold == 0 && !cfg.monitor_webhook.is_empty() {
             cfg.monitor_lag_threshold = 10_000;
-        }
-        cfg.sasl_mechanism = SaslMechanism::from_king(&self.mechanism.read(cx).value());
-        if cfg.sasl_mechanism == SaslMechanism::Gssapi
-            || cfg.sasl_mechanism == SaslMechanism::Oauthbearer
-            || cfg.sasl_mechanism == SaslMechanism::AwsMskIam
-        {
-            cfg.sasl = true;
         }
         if cfg.bootstrap_servers.trim().is_empty() {
             notify(cx, NotificationAction::new_error("bootstrap servers required".into()));
@@ -194,15 +231,20 @@ impl ConnectionPicker {
     }
 }
 
+fn labeled(label: SharedString, child: impl IntoElement) -> Div {
+    v_flex().gap_1().child(Label::new(label).text_xs()).child(child)
+}
+
 impl Render for ConnectionPicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let saved = self.saved(cx);
         let selected = self.selected.clone();
+        let mech = self.mechanism(cx);
         v_flex()
             .gap_3()
-            .w(px(520.))
+            .w_full()
             .child(Label::new(i18n_kafka(cx, "saved_title")).font_bold())
-            .child(v_flex().gap_1().max_h(px(180.)).children(saved.into_iter().map(|c| {
+            .child(v_flex().gap_1().children(saved.into_iter().map(|c| {
                 let id = c.id.clone();
                 let active = selected.as_deref() == Some(&id);
                 let label = format!("{}  {}", c.display_name(), c.bootstrap_servers);
@@ -213,30 +255,7 @@ impl Render for ConnectionPicker {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.selected = Some(id.clone());
                         if let Some(cfg) = this.saved(cx).into_iter().find(|c| c.id == id) {
-                            this.name.update(cx, |input, cx| input.set_value(&cfg.name, window, cx));
-                            this.bootstrap
-                                .update(cx, |input, cx| input.set_value(&cfg.bootstrap_servers, window, cx));
-                            this.sasl_user
-                                .update(cx, |input, cx| input.set_value(&cfg.sasl_user, window, cx));
-                            this.sasl_pwd
-                                .update(cx, |input, cx| input.set_value(&cfg.sasl_password, window, cx));
-                            this.sr_url
-                                .update(cx, |input, cx| input.set_value(&cfg.sr.url, window, cx));
-                            this.mechanism.update(cx, |input, cx| {
-                                input.set_value(cfg.sasl_mechanism.as_rdkafka(), window, cx)
-                            });
-                            this.ssh_host
-                                .update(cx, |input, cx| input.set_value(&cfg.ssh_host, window, cx));
-                            this.ssh_user
-                                .update(cx, |input, cx| input.set_value(&cfg.ssh_user, window, cx));
-                            this.kerberos
-                                .update(cx, |input, cx| input.set_value(&cfg.kerberos_principal, window, cx));
-                            this.msk_region
-                                .update(cx, |input, cx| input.set_value(&cfg.msk_region, window, cx));
-                            this.webhook
-                                .update(cx, |input, cx| input.set_value(&cfg.monitor_webhook, window, cx));
-                            this.tls = cfg.tls;
-                            this.ssh = cfg.ssh;
+                            this.load_cfg(&cfg, window, cx);
                         }
                         cx.notify();
                     }))
@@ -264,54 +283,105 @@ impl Render for ConnectionPicker {
             )
             .child(div().h(px(1.)).bg(cx.theme().border))
             .child(Label::new(i18n_kafka(cx, "new_title")).font_bold())
-            .child(Input::new(&self.name).h(px(32.)))
-            .child(Input::new(&self.bootstrap).h(px(32.)))
+            .child(labeled(i18n_kafka(cx, "conn_name"), Input::new(&self.name).h(px(32.))))
+            .child(labeled(
+                i18n_kafka(cx, "bootstrap"),
+                Input::new(&self.bootstrap).h(px(32.)),
+            ))
             .child(
-                h_flex()
-                    .gap_2()
-                    .child(Input::new(&self.sasl_user).h(px(32.)).flex_1())
-                    .child(Input::new(&self.sasl_pwd).h(px(32.)).flex_1()),
+                Switch::new("tls")
+                    .label(i18n_kafka(cx, "tls"))
+                    .checked(self.tls)
+                    .on_click(cx.listener(|this, checked, _, cx| {
+                        this.tls = *checked;
+                        cx.notify();
+                    })),
             )
-            .child(Input::new(&self.sr_url).h(px(32.)))
-            .child(Label::new(i18n_kafka(cx, "sasl")).text_xs())
-            .child(Input::new(&self.mechanism).h(px(32.)))
-            .child(Label::new(i18n_kafka(cx, "kerberos")).text_xs())
-            .child(Input::new(&self.kerberos).h(px(32.)))
-            .child(Label::new(i18n_kafka(cx, "msk")).text_xs())
-            .child(Input::new(&self.msk_region).h(px(32.)))
-            .child(Label::new(i18n_kafka(cx, "webhook")).text_xs())
-            .child(Input::new(&self.webhook).h(px(32.)))
+            .when(self.tls, |this| {
+                this.child(
+                    Checkbox::new("skip-tls")
+                        .label(i18n_kafka(cx, "skip_tls"))
+                        .checked(self.skip_tls)
+                        .on_click(cx.listener(|this, checked, _, cx| {
+                            this.skip_tls = *checked;
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        Button::new("tls")
-                            .when(self.tls, |b| b.primary())
-                            .when(!self.tls, |b| b.ghost())
-                            .label(i18n_kafka(cx, "tls"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.tls = !this.tls;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        Button::new("ssh")
-                            .when(self.ssh, |b| b.primary())
-                            .when(!self.ssh, |b| b.ghost())
-                            .label(i18n_kafka(cx, "ssh"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.ssh = !this.ssh;
-                                cx.notify();
-                            })),
-                    ),
+                Switch::new("sasl")
+                    .label(i18n_kafka(cx, "sasl"))
+                    .checked(self.sasl)
+                    .on_click(cx.listener(|this, checked, _, cx| {
+                        this.sasl = *checked;
+                        cx.notify();
+                    })),
             )
+            .when(self.sasl, |this| {
+                this.child(labeled(
+                    i18n_kafka(cx, "sasl_mechanism"),
+                    div().h(px(32.)).child(self.mechanism.clone()),
+                ))
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            labeled(
+                                i18n_kafka(cx, "sasl_user"),
+                                Input::new(&self.sasl_user).h(px(32.)).flex_1(),
+                            )
+                            .flex_1(),
+                        )
+                        .child(
+                            labeled(
+                                i18n_kafka(cx, "sasl_pwd"),
+                                Input::new(&self.sasl_pwd).h(px(32.)).flex_1(),
+                            )
+                            .flex_1(),
+                        ),
+                )
+                .when(mech == SaslMechanism::Gssapi, |this| {
+                    this.child(labeled(
+                        i18n_kafka(cx, "kerberos"),
+                        Input::new(&self.kerberos).h(px(32.)),
+                    ))
+                })
+                .when(mech == SaslMechanism::AwsMskIam, |this| {
+                    this.child(labeled(i18n_kafka(cx, "msk"), Input::new(&self.msk_region).h(px(32.))))
+                })
+            })
             .child(
-                h_flex()
-                    .gap_2()
-                    .child(Input::new(&self.ssh_host).h(px(32.)).flex_1())
-                    .child(Input::new(&self.ssh_user).h(px(32.)).flex_1()),
+                Switch::new("ssh")
+                    .label(i18n_kafka(cx, "ssh"))
+                    .checked(self.ssh)
+                    .on_click(cx.listener(|this, checked, _, cx| {
+                        this.ssh = *checked;
+                        cx.notify();
+                    })),
             )
-            .child(Label::new(i18n_kafka(cx, "ssh_hint")).text_xs())
+            .when(self.ssh, |this| {
+                this.child(
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            labeled(
+                                i18n_kafka(cx, "ssh_host"),
+                                Input::new(&self.ssh_host).h(px(32.)).flex_1(),
+                            )
+                            .flex_1(),
+                        )
+                        .child(
+                            labeled(
+                                i18n_kafka(cx, "ssh_user"),
+                                Input::new(&self.ssh_user).h(px(32.)).flex_1(),
+                            )
+                            .flex_1(),
+                        ),
+                )
+                .child(Label::new(i18n_kafka(cx, "ssh_hint")).text_xs())
+            })
+            .child(labeled(i18n_kafka(cx, "sr_url"), Input::new(&self.sr_url).h(px(32.))))
+            .child(labeled(i18n_kafka(cx, "webhook"), Input::new(&self.webhook).h(px(32.))))
             .child(
                 Button::new("save-open")
                     .primary()
@@ -354,6 +424,8 @@ impl Render for ConnectionPicker {
 pub fn open_connection_picker(workspace: Entity<Workspace>, window: &mut Window, cx: &mut App) {
     let view = cx.new(|cx| ConnectionPicker::new(workspace, window, cx));
     Dialog::new(i18n_kafka(cx, "picker_title"))
+        .w(px(560.))
+        .max_h(px(640.))
         .button_props(dialog_button_props(cx))
         .ok_text(i18n_common(cx, "cancel"))
         .child(move || view.clone())

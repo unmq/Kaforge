@@ -19,7 +19,7 @@ chrono = { workspace = true }
 futures = "0.3"
 rdkafka = { version = "0.38", default-features = false, features = [
     "cmake-build",
-    "ssl",
+    "ssl-vendored",
     "sasl",
     "gssapi",
     "libz",

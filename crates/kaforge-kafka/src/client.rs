@@ -275,6 +275,36 @@ impl ConnectionHandle {
         Ok(())
     }
 
+    pub fn delete_records(&self, topic: &str, before_offset: Option<i64>) -> Result<()> {
+        let md = self
+            .inner
+            .consumer
+            .fetch_metadata(Some(topic), Timeout::After(Duration::from_secs(8)))?;
+        let mut tpl = rdkafka::TopicPartitionList::new();
+        if let Some(t) = md.topics().first() {
+            for p in t.partitions() {
+                let offset = match before_offset {
+                    Some(o) => rdkafka::Offset::Offset(o),
+                    None => rdkafka::Offset::End,
+                };
+                tpl.add_partition_offset(topic, p.id(), offset)
+                    .map_err(|e| Error::msg(e.to_string()))?;
+            }
+        }
+        let rt = Self::rt()?;
+        rt.block_on(self.inner.admin.delete_records(&tpl, &AdminOptions::new()))?;
+        Ok(())
+    }
+
+    pub fn set_client_quota(&self, key: &str, value: &str) -> Result<()> {
+        let id = self
+            .list_brokers()?
+            .first()
+            .map(|b| b.id)
+            .ok_or_else(|| Error::msg("no brokers"))?;
+        self.alter_broker_config(id, key, value)
+    }
+
     pub fn list_brokers(&self) -> Result<Vec<BrokerInfo>> {
         let md = self
             .inner

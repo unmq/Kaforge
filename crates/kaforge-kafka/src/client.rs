@@ -412,7 +412,7 @@ impl ConnectionHandle {
             .map(|g| GroupOverview {
                 id: g.name().to_string(),
                 state: g.state().to_string(),
-                protocol: g.protocol().to_string(),
+                protocol: format!("{} ({})", g.protocol(), g.members().len()),
             })
             .collect())
     }

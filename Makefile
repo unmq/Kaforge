@@ -13,6 +13,11 @@ fmt:
 test:
 	cargo test --workspace
 
+# PLAINTEXT Kafka via docker compose (crates/kaforge-kafka/docker-compose.yml).
+# Ignored by `make test` so default CI stays docker-free.
+test-int:
+	cargo test -p kaforge-kafka --test docker -- --ignored --nocapture --test-threads=1
+
 # Locale hygiene on demand (tests/locale_keys.rs, also part of `make test`):
 # key parity across locales — reliable even when build.rs's
 # rerun-if-changed misses an in-place edit — plus the orphan-key scan

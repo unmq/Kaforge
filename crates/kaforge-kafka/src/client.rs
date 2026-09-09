@@ -346,10 +346,16 @@ impl ConnectionHandle {
 
     pub fn consume_once(&self, req: ConsumeRequest) -> Result<Vec<ConsumedRecord>> {
         let mut cfg = build_client_config(&self.config)?;
+        if !req.group.is_empty() {
+            cfg.set("group.id", &req.group);
+        } else {
+            cfg.set("group.id", format!("kaforge-{}", uuid::Uuid::now_v7()));
+        }
         cfg.set(
             "auto.offset.reset",
             if req.from_beginning { "earliest" } else { "latest" },
         );
+        cfg.set("enable.auto.commit", if req.commit { "true" } else { "false" });
         let consumer: BaseConsumer<IdleContext> = cfg.create_with_context(IdleContext)?;
         consumer.subscribe(&[&req.topic])?;
         let decode = self.decoder();

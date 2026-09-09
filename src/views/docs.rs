@@ -99,6 +99,7 @@ pub struct DocPane {
     stream: Option<StreamSession>,
     consume_rows: Vec<ConsumedRecord>,
     from_beginning: bool,
+    commit: bool,
     lag_points: Vec<LagPoint>,
 }
 
@@ -130,6 +131,7 @@ impl DocPane {
             stream: None,
             consume_rows: Vec::new(),
             from_beginning: false,
+            commit: false,
             lag_points: Vec::new(),
         };
         pane.refresh(window, cx);
@@ -159,7 +161,7 @@ impl DocPane {
                                 .enumerate()
                                 .map(|(i, row)| {
                                     let lag = row
-                                        .get(5)
+                                        .get(3)
                                         .and_then(|s| s.split_whitespace().last())
                                         .and_then(|s| s.parse().ok())
                                         .unwrap_or(0.0);
@@ -248,13 +250,14 @@ impl DocPane {
         let topic = self.topic.read(cx).value().to_string();
         let group = self.extra.read(cx).value().to_string();
         let from_beginning = self.from_beginning;
+        let commit = self.commit;
         cx.spawn(async move |this, cx| {
             let req = ConsumeRequest {
                 topic,
                 group,
                 from_beginning,
                 max_messages: 50,
-                commit: false,
+                commit,
             };
             let result = smol::unblock(move || handle.consume_once(req)).await;
             this.update(cx, |this, cx| {
@@ -287,7 +290,7 @@ impl DocPane {
             group,
             from_beginning: self.from_beginning,
             max_messages: 10_000,
-            commit: false,
+            commit: self.commit,
         }) {
             Ok(session) => {
                 self.stream = Some(session);
@@ -589,6 +592,67 @@ impl DocPane {
         .detach();
     }
 
+    fn set_sr_compat(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let subject = self.topic.read(cx).value().to_string();
+        let level = self.extra.read(cx).value().to_string();
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || {
+                handle
+                    .sr()
+                    .ok_or_else(|| "no schema registry".to_string())
+                    .and_then(|sr| sr.set_compatibility(&subject, &level).map_err(|e| e.to_string()))
+            })
+            .await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "created"),
+                    Err(e) => e.into(),
+                };
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn touch_acl(&mut self, create: bool, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let principal = self.extra.read(cx).value().to_string();
+        let resource = self.topic.read(cx).value().to_string();
+        let acl = AclEntry {
+            principal,
+            host: "*".into(),
+            operation: "All".into(),
+            permission: "Allow".into(),
+            resource_type: "Topic".into(),
+            resource_name: resource,
+        };
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || {
+                if create {
+                    handle.create_acl(acl)
+                } else {
+                    handle.delete_acl(acl)
+                }
+            })
+            .await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "created"),
+                    Err(e) => e.to_string().into(),
+                };
+                this.refresh_from_cx(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn confirm_delete_topic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let name = self.topic.read(cx).value().to_string();
         if name.trim().is_empty() {
@@ -708,6 +772,14 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                     })),
             )
             .child(
+                Button::new("commit")
+                    .label(i18n_kafka(cx, "commit"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.commit = !this.commit;
+                        cx.notify();
+                    })),
+            )
+            .child(
                 Button::new("search")
                     .label(i18n_kafka(cx, "search"))
                     .on_click(cx.listener(|this, _, _, cx| this.filter_consumed(cx))),
@@ -747,6 +819,7 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
         DocKind::Sr => h_flex()
             .gap_2()
             .child(Input::new(&pane.topic).h(px(32.)).w(px(220.)))
+            .child(Input::new(&pane.extra).h(px(32.)).w(px(140.)))
             .child(
                 Button::new("refresh")
                     .label(i18n_kafka(cx, "refresh"))
@@ -757,6 +830,11 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                     .danger()
                     .label(i18n_common(cx, "delete"))
                     .on_click(cx.listener(|this, _, _, cx| this.delete_sr_subject(cx))),
+            )
+            .child(
+                Button::new("compat")
+                    .label(i18n_kafka(cx, "save_plan"))
+                    .on_click(cx.listener(|this, _, _, cx| this.set_sr_compat(cx))),
             )
             .into_any_element(),
         DocKind::Nodes | DocKind::Acl | DocKind::Monitor => h_flex()
@@ -772,6 +850,17 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                 Button::new("alter")
                     .label(i18n_kafka(cx, "save_plan"))
                     .on_click(cx.listener(|this, _, _, cx| this.alter_named_config(cx))),
+            )
+            .child(
+                Button::new("acl-add")
+                    .label(i18n_kafka(cx, "create_acl"))
+                    .on_click(cx.listener(|this, _, _, cx| this.touch_acl(true, cx))),
+            )
+            .child(
+                Button::new("acl-del")
+                    .danger()
+                    .label(i18n_kafka(cx, "delete_acl"))
+                    .on_click(cx.listener(|this, _, _, cx| this.touch_acl(false, cx))),
             )
             .into_any_element(),
     }
@@ -810,7 +899,13 @@ fn columns_for(kind: DocKind, cx: &App) -> Vec<TextColumn> {
             TextColumn::new("resource", i18n_kafka(cx, "col_resource"), 200.),
         ],
         DocKind::Sr => vec![TextColumn::new("subject", i18n_kafka(cx, "col_subject"), 280.).sortable()],
-        DocKind::Monitor | DocKind::Consumer => vec![
+        DocKind::Monitor => vec![
+            TextColumn::new("topic", i18n_kafka(cx, "col_topic"), 160.),
+            TextColumn::new("partition", i18n_kafka(cx, "col_partition"), 80.).numeric(),
+            TextColumn::new("offset", i18n_kafka(cx, "col_offset"), 100.).numeric(),
+            TextColumn::new("lag", i18n_kafka(cx, "col_lag"), 100.).numeric(),
+        ],
+        DocKind::Consumer => vec![
             TextColumn::new("topic", i18n_kafka(cx, "col_topic"), 160.),
             TextColumn::new("partition", i18n_kafka(cx, "col_partition"), 80.).numeric(),
             TextColumn::new("offset", i18n_kafka(cx, "col_offset"), 100.).numeric(),
@@ -844,12 +939,23 @@ fn load_rows(
                 ]
             })
             .collect()),
-        DocKind::Nodes => Ok(handle
-            .list_brokers()
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|b| vec![b.id.to_string().into(), b.host.into(), b.port.to_string().into()])
-            .collect()),
+        DocKind::Nodes => {
+            let mut rows: Vec<Vec<SharedString>> = handle
+                .list_brokers()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|b| vec![b.id.to_string().into(), b.host.into(), b.port.to_string().into()])
+                .collect();
+            match handle.describe_log_dirs() {
+                Ok(dirs) => {
+                    for (k, v) in dirs {
+                        rows.push(vec!["".into(), k.into(), v.into()]);
+                    }
+                }
+                Err(e) => rows.push(vec!["".into(), "logdirs".into(), e.to_string().into()]),
+            }
+            Ok(rows)
+        }
         DocKind::Groups => Ok(handle
             .list_groups()
             .map_err(|e| e.to_string())?
@@ -880,9 +986,7 @@ fn load_rows(
                                 t.name.clone().into(),
                                 p.id.to_string().into(),
                                 format!("{low}..{high}").into(),
-                                "".into(),
-                                "".into(),
-                                format!("lag-window {}", high.saturating_sub(low)).into(),
+                                high.saturating_sub(low).to_string().into(),
                             ]);
                         }
                     }

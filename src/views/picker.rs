@@ -273,7 +273,14 @@ impl Render for ConnectionPicker {
                     .child(Input::new(&self.sasl_pwd).h(px(32.)).flex_1()),
             )
             .child(Input::new(&self.sr_url).h(px(32.)))
+            .child(Label::new(i18n_kafka(cx, "sasl")).text_xs())
             .child(Input::new(&self.mechanism).h(px(32.)))
+            .child(Label::new(i18n_kafka(cx, "kerberos")).text_xs())
+            .child(Input::new(&self.kerberos).h(px(32.)))
+            .child(Label::new(i18n_kafka(cx, "msk")).text_xs())
+            .child(Input::new(&self.msk_region).h(px(32.)))
+            .child(Label::new(i18n_kafka(cx, "webhook")).text_xs())
+            .child(Input::new(&self.webhook).h(px(32.)))
             .child(
                 h_flex()
                     .gap_2()
@@ -305,9 +312,6 @@ impl Render for ConnectionPicker {
                     .child(Input::new(&self.ssh_user).h(px(32.)).flex_1()),
             )
             .child(Label::new(i18n_kafka(cx, "ssh_hint")).text_xs())
-            .child(Input::new(&self.kerberos).h(px(32.)))
-            .child(Input::new(&self.msk_region).h(px(32.)))
-            .child(Input::new(&self.webhook).h(px(32.)))
             .child(
                 Button::new("save-open")
                     .primary()
@@ -316,6 +320,7 @@ impl Render for ConnectionPicker {
             )
             .child(div().h(px(1.)).bg(cx.theme().border))
             .child(Label::new(i18n_kafka(cx, "import_yaml")).font_bold())
+            .child(Label::new(i18n_kafka(cx, "yaml_placeholder")).text_xs())
             .child(Textarea::new(&self.yaml).h(px(88.)))
             .child(
                 h_flex()

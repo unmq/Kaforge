@@ -14,7 +14,7 @@
 
 use crate::helpers::format_unix_secs;
 use crate::states::{i18n_common, i18n_kafka};
-use gpui::{App, Entity, SharedString, Window, prelude::*, px};
+use gpui::{App, Entity, SharedString, Window, div, prelude::*, px};
 use gpui_kit::component::{
     ActiveTheme,
     button::{Button, ButtonVariants},
@@ -81,6 +81,12 @@ impl DocKind {
     }
 }
 
+#[derive(Clone)]
+struct LagPoint {
+    label: String,
+    lag: f64,
+}
+
 pub struct DocPane {
     kind: DocKind,
     payload: Option<String>,
@@ -92,6 +98,8 @@ pub struct DocPane {
     body: Entity<TextareaState>,
     stream: Option<StreamSession>,
     consume_rows: Vec<ConsumedRecord>,
+    from_beginning: bool,
+    lag_points: Vec<LagPoint>,
 }
 
 impl DocPane {
@@ -121,6 +129,8 @@ impl DocPane {
             body,
             stream: None,
             consume_rows: Vec::new(),
+            from_beginning: false,
+            lag_points: Vec::new(),
         };
         pane.refresh(window, cx);
         pane
@@ -143,6 +153,39 @@ impl DocPane {
             this.update(cx, |this, cx| {
                 match result {
                     Ok(rows) => {
+                        if kind == DocKind::Monitor {
+                            this.lag_points = rows
+                                .iter()
+                                .enumerate()
+                                .map(|(i, row)| {
+                                    let lag = row
+                                        .get(5)
+                                        .and_then(|s| s.split_whitespace().last())
+                                        .and_then(|s| s.parse().ok())
+                                        .unwrap_or(0.0);
+                                    LagPoint {
+                                        label: i.to_string(),
+                                        lag,
+                                    }
+                                })
+                                .collect();
+                            let max_lag = this.lag_points.iter().map(|p| p.lag).fold(0.0, f64::max);
+                            if let Some(handle) = &this.handle {
+                                let url = handle.config.monitor_webhook.clone();
+                                let threshold = handle.config.monitor_lag_threshold as f64;
+                                if !url.is_empty() && threshold > 0.0 && max_lag > threshold {
+                                    let body = format!("{{\"lag\":{max_lag}}}");
+                                    cx.spawn(async move |_, _| {
+                                        smol::unblock(move || {
+                                            let _ =
+                                                ureq::post(&url).header("Content-Type", "application/json").send(&body);
+                                        })
+                                        .await;
+                                    })
+                                    .detach();
+                                }
+                            }
+                        }
                         this.status = format!("{} {}", rows.len(), i18n_kafka(cx, "rows")).into();
                         this.table.update(cx, |state, cx| {
                             state.delegate_mut().set_rows(rows);
@@ -204,11 +247,12 @@ impl DocPane {
         };
         let topic = self.topic.read(cx).value().to_string();
         let group = self.extra.read(cx).value().to_string();
+        let from_beginning = self.from_beginning;
         cx.spawn(async move |this, cx| {
             let req = ConsumeRequest {
                 topic,
                 group,
-                from_beginning: false,
+                from_beginning,
                 max_messages: 50,
                 commit: false,
             };
@@ -241,7 +285,7 @@ impl DocPane {
         match handle.start_stream(ConsumeRequest {
             topic,
             group,
-            from_beginning: false,
+            from_beginning: self.from_beginning,
             max_messages: 10_000,
             commit: false,
         }) {
@@ -336,6 +380,232 @@ impl DocPane {
         })
         .detach();
     }
+
+    fn add_partitions(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let name = self.topic.read(cx).value().to_string();
+        let total = self.extra.read(cx).value().parse::<i32>().unwrap_or(0);
+        if name.trim().is_empty() || total <= 0 {
+            self.status = "topic and partition count required".into();
+            cx.notify();
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || handle.add_partitions(&name, total)).await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "created"),
+                    Err(e) => e.to_string().into(),
+                };
+                this.refresh_from_cx(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn delete_records(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let name = self.topic.read(cx).value().to_string();
+        if name.trim().is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || handle.delete_records(&name, None)).await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "deleted"),
+                    Err(e) => e.to_string().into(),
+                };
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn alter_named_config(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let name = self.topic.read(cx).value().to_string();
+        let spec = self.extra.read(cx).value().to_string();
+        let Some((key, value)) = spec.split_once('=') else {
+            self.status = "use extra field as key=value".into();
+            cx.notify();
+            return;
+        };
+        let key = key.to_string();
+        let value = value.to_string();
+        let kind = self.kind;
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || match kind {
+                DocKind::Nodes => {
+                    let id = name.parse::<i32>().unwrap_or(0);
+                    handle.alter_broker_config(id, &key, &value)
+                }
+                _ => handle.alter_topic_config(&name, &key, &value),
+            })
+            .await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "created"),
+                    Err(e) => e.to_string().into(),
+                };
+                this.refresh_from_cx(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn reset_group(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let group = self.extra.read(cx).value().to_string();
+        let topic = self.topic.read(cx).value().to_string();
+        let to_beginning = self.from_beginning;
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || handle.reset_offsets(&group, &topic, to_beginning)).await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "created"),
+                    Err(e) => e.to_string().into(),
+                };
+                this.refresh_from_cx(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn delete_group(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let group = self.extra.read(cx).value().to_string();
+        if group.trim().is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || handle.delete_group(&group)).await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "deleted"),
+                    Err(e) => e.to_string().into(),
+                };
+                this.refresh_from_cx(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn export_csv(&mut self, cx: &mut Context<Self>) {
+        let mut csv = String::from("topic,partition,offset,key,value\n");
+        for rec in &self.consume_rows {
+            csv.push_str(&format!(
+                "{},{},{},{},{}\n",
+                rec.topic,
+                rec.partition,
+                rec.offset,
+                rec.key.replace(',', " "),
+                rec.value.replace(['\n', ','], " ")
+            ));
+        }
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(csv));
+        self.status = i18n_common(cx, "copied");
+        cx.notify();
+    }
+
+    fn replay(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let dest = self.extra.read(cx).value().to_string();
+        let rows = self.consume_rows.clone();
+        if dest.trim().is_empty() || rows.is_empty() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || handle.replay(&rows, &dest)).await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "produced"),
+                    Err(e) => e.to_string().into(),
+                };
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn filter_consumed(&mut self, cx: &mut Context<Self>) {
+        let q = self.extra.read(cx).value().to_string().to_ascii_lowercase();
+        let rows: Vec<_> = self
+            .consume_rows
+            .iter()
+            .filter(|r| {
+                q.is_empty() || r.key.to_ascii_lowercase().contains(&q) || r.value.to_ascii_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect();
+        self.status = format!("{} {}", rows.len(), i18n_kafka(cx, "rows")).into();
+        self.table.update(cx, |state, cx| {
+            state.delegate_mut().set_rows(records_to_rows(&rows));
+            cx.notify();
+        });
+        cx.notify();
+    }
+
+    fn delete_sr_subject(&mut self, cx: &mut Context<Self>) {
+        let Some(handle) = self.handle.clone() else {
+            return;
+        };
+        let name = self.topic.read(cx).value().to_string();
+        cx.spawn(async move |this, cx| {
+            let result = smol::unblock(move || {
+                handle
+                    .sr()
+                    .ok_or_else(|| "no schema registry".to_string())
+                    .and_then(|sr| sr.delete_subject(&name).map_err(|e| e.to_string()))
+            })
+            .await;
+            this.update(cx, |this, cx| {
+                this.status = match result {
+                    Ok(()) => i18n_kafka(cx, "deleted"),
+                    Err(e) => e.into(),
+                };
+                this.refresh_from_cx(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn confirm_delete_topic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = self.topic.read(cx).value().to_string();
+        if name.trim().is_empty() {
+            return;
+        }
+        let title = i18n_kafka(cx, "delete_topic");
+        let body = i18n_kafka(cx, "confirm_delete").to_string().replace("{name}", &name);
+        let entity = cx.entity();
+        kaforge_ui::Dialog::new_alert(title, body)
+            .button_props(crate::states::dialog_button_props(cx))
+            .ok_text(i18n_common(cx, "delete"))
+            .on_ok(move |_, _, cx| {
+                entity.update(cx, |this, cx| this.delete_selected_topic(cx));
+                true
+            })
+            .open(window, cx);
+    }
 }
 
 impl Render for DocPane {
@@ -349,6 +619,16 @@ impl Render for DocPane {
             .p_3()
             .child(toolbar(self, cx))
             .child(Label::new(status).text_xs().text_color(muted))
+            .when(self.kind == DocKind::Monitor && !self.lag_points.is_empty(), |this| {
+                let points = self.lag_points.clone();
+                this.child(
+                    div().h(px(160.)).w_full().child(
+                        gpui_kit::component::chart::LineChart::new(points)
+                            .x(|p: &LagPoint| p.label.clone())
+                            .y(|p: &LagPoint| p.lag),
+                    ),
+                )
+            })
             .child(v_flex().flex_1().min_h_0().child(DataTable::new(&self.table)))
     }
 }
@@ -373,7 +653,23 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                 Button::new("delete")
                     .danger()
                     .label(i18n_kafka(cx, "delete_topic"))
-                    .on_click(cx.listener(|this, _, _, cx| this.delete_selected_topic(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.confirm_delete_topic(window, cx))),
+            )
+            .child(Input::new(&pane.extra).h(px(32.)).w(px(120.)))
+            .child(
+                Button::new("add-parts")
+                    .label(i18n_kafka(cx, "add_partitions"))
+                    .on_click(cx.listener(|this, _, _, cx| this.add_partitions(cx))),
+            )
+            .child(
+                Button::new("del-recs")
+                    .label(i18n_kafka(cx, "delete_records"))
+                    .on_click(cx.listener(|this, _, _, cx| this.delete_records(cx))),
+            )
+            .child(
+                Button::new("alter-topic")
+                    .label(i18n_kafka(cx, "save_plan"))
+                    .on_click(cx.listener(|this, _, _, cx| this.alter_named_config(cx))),
             )
             .into_any_element(),
         DocKind::Producer => h_flex()
@@ -403,13 +699,79 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                     .label(i18n_kafka(cx, "stream"))
                     .on_click(cx.listener(|this, _, _, cx| this.start_stream(cx))),
             )
+            .child(
+                Button::new("from-beg")
+                    .label(i18n_kafka(cx, "from_beginning"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.from_beginning = !this.from_beginning;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Button::new("search")
+                    .label(i18n_kafka(cx, "search"))
+                    .on_click(cx.listener(|this, _, _, cx| this.filter_consumed(cx))),
+            )
+            .child(
+                Button::new("export")
+                    .label(i18n_kafka(cx, "export_csv"))
+                    .on_click(cx.listener(|this, _, _, cx| this.export_csv(cx))),
+            )
+            .child(
+                Button::new("replay")
+                    .label(i18n_kafka(cx, "replay"))
+                    .on_click(cx.listener(|this, _, _, cx| this.replay(cx))),
+            )
             .into_any_element(),
-        _ => h_flex()
+        DocKind::Groups => h_flex()
             .gap_2()
+            .child(Input::new(&pane.topic).h(px(32.)).w(px(180.)))
+            .child(Input::new(&pane.extra).h(px(32.)).w(px(160.)))
             .child(
                 Button::new("refresh")
                     .label(i18n_kafka(cx, "refresh"))
                     .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
+            )
+            .child(
+                Button::new("reset")
+                    .label(i18n_kafka(cx, "reset_offsets"))
+                    .on_click(cx.listener(|this, _, _, cx| this.reset_group(cx))),
+            )
+            .child(
+                Button::new("del-group")
+                    .danger()
+                    .label(i18n_kafka(cx, "delete_group"))
+                    .on_click(cx.listener(|this, _, _, cx| this.delete_group(cx))),
+            )
+            .into_any_element(),
+        DocKind::Sr => h_flex()
+            .gap_2()
+            .child(Input::new(&pane.topic).h(px(32.)).w(px(220.)))
+            .child(
+                Button::new("refresh")
+                    .label(i18n_kafka(cx, "refresh"))
+                    .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
+            )
+            .child(
+                Button::new("del-sr")
+                    .danger()
+                    .label(i18n_common(cx, "delete"))
+                    .on_click(cx.listener(|this, _, _, cx| this.delete_sr_subject(cx))),
+            )
+            .into_any_element(),
+        DocKind::Nodes | DocKind::Acl | DocKind::Monitor => h_flex()
+            .gap_2()
+            .child(Input::new(&pane.topic).h(px(32.)).w(px(160.)))
+            .child(Input::new(&pane.extra).h(px(32.)).w(px(180.)))
+            .child(
+                Button::new("refresh")
+                    .label(i18n_kafka(cx, "refresh"))
+                    .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
+            )
+            .child(
+                Button::new("alter")
+                    .label(i18n_kafka(cx, "save_plan"))
+                    .on_click(cx.listener(|this, _, _, cx| this.alter_named_config(cx))),
             )
             .into_any_element(),
     }

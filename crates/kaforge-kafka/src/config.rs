@@ -48,7 +48,10 @@ pub struct ConnectionConfig {
     pub ssh_user: String,
     pub ssh_password: String,
     pub ssh_key_file: String,
+    pub ssh_known_hosts_path: String,
     pub sr: SchemaRegistryConfig,
+    pub monitor_webhook: String,
+    pub monitor_lag_threshold: i64,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

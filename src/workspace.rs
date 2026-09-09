@@ -305,9 +305,15 @@ impl Workspace {
         if self.sessions[ix].handle.is_some() || self.sessions[ix].status == SessionStatus::Connecting {
             return;
         }
-        let Some(cfg) = self.saved.iter().find(|c| c.id == id).cloned() else {
+        let Some(mut cfg) = self.saved.iter().find(|c| c.id == id).cloned() else {
             return;
         };
+        if cfg.ssh
+            && cfg.ssh_known_hosts_path.trim().is_empty()
+            && let Ok(dir) = crate::helpers::get_or_create_config_dir()
+        {
+            cfg.ssh_known_hosts_path = dir.join("known_hosts").display().to_string();
+        }
         self.sessions[ix].status = SessionStatus::Connecting;
         self.sessions[ix].error = None;
         cx.notify();

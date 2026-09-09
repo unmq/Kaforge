@@ -187,12 +187,15 @@ pub fn import_king_yaml(text: &str) -> Result<Vec<ConnectionConfig>> {
             ssh_user: k.ssh_user,
             ssh_password: k.ssh_password,
             ssh_key_file: k.ssh_key_file,
+            ssh_known_hosts_path: String::new(),
             sr: SchemaRegistryConfig {
                 url: global_sr.url.clone(),
                 user: global_sr.user.clone(),
                 password: global_sr.pass.clone(),
                 skip_tls: enabled(&global_sr.skip_tls) || global_sr.skip_tls.is_empty(),
             },
+            monitor_webhook: String::new(),
+            monitor_lag_threshold: 0,
         });
     }
     Ok(out)

@@ -51,6 +51,7 @@ impl SshTunnel {
         let ssh_password = cfg.ssh_password.clone();
         let ssh_key_file = cfg.ssh_key_file.clone();
         let brokers = cfg.bootstrap_servers.clone();
+        let known_hosts = cfg.ssh_known_hosts_path.clone();
         thread::Builder::new()
             .name("kaforge-ssh".into())
             .spawn(move || {
@@ -63,6 +64,7 @@ impl SshTunnel {
                     ssh_password,
                     ssh_key_file,
                     brokers,
+                    known_hosts,
                 }) {
                     error!(error = %e, "SSH tunnel exited");
                 }
@@ -83,6 +85,7 @@ struct SshForward {
     ssh_password: String,
     ssh_key_file: String,
     brokers: String,
+    known_hosts: String,
 }
 
 fn run_forward(fwd: SshForward) -> Result<()> {
@@ -97,6 +100,7 @@ fn run_forward(fwd: SshForward) -> Result<()> {
             &fwd.ssh_user,
             &fwd.ssh_password,
             &fwd.ssh_key_file,
+            &fwd.known_hosts,
         )
         .await?;
         let first = fwd
@@ -132,9 +136,14 @@ async fn open_session(
     user: &str,
     password: &str,
     key_file: &str,
-) -> Result<russh::client::Handle<IgnoreHost>> {
+    known_hosts: &str,
+) -> Result<russh::client::Handle<TofuHost>> {
     let config = Arc::new(russh::client::Config::default());
-    let mut session = russh::client::connect(config, (host, port), IgnoreHost)
+    let handler = TofuHost {
+        host: format!("{host}:{port}"),
+        path: known_hosts.to_string(),
+    };
+    let mut session = russh::client::connect(config, (host, port), handler)
         .await
         .map_err(|e| Error::msg(format!("SSH connect {host}:{port}: {e}")))?;
     let authed = if !key_file.trim().is_empty() {
@@ -195,14 +204,43 @@ fn split_host_port(input: &str) -> (String, u16) {
     (input.to_string(), 9092)
 }
 
-/// TOFU is not recorded yet — first connect still verifies nothing beyond
-/// accepting the key. Upgrade: persist host keys beside connections.toml.
-struct IgnoreHost;
+/// Trust-on-first-use host key check. Stored as `host:port fingerprint` lines.
+struct TofuHost {
+    host: String,
+    path: String,
+}
 
-impl russh::client::Handler for IgnoreHost {
+impl russh::client::Handler for TofuHost {
     type Error = russh::Error;
 
-    async fn check_server_key(&mut self, _server_public_key: &russh::keys::PublicKey) -> Result<bool, Self::Error> {
+    async fn check_server_key(&mut self, server_public_key: &russh::keys::PublicKey) -> Result<bool, Self::Error> {
+        let fp = server_public_key.fingerprint(russh::keys::HashAlg::Sha256).to_string();
+        if self.path.trim().is_empty() {
+            return Ok(true);
+        }
+        let needle = format!("{} {fp}", self.host);
+        let existing = std::fs::read_to_string(&self.path).unwrap_or_default();
+        for line in existing.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some((host, stored)) = line.split_once(' ')
+                && host == self.host
+            {
+                return Ok(stored == fp);
+            }
+        }
+        let mut out = existing;
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&needle);
+        out.push('\n');
+        if let Some(parent) = std::path::Path::new(&self.path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(&self.path, out).map_err(|_| russh::Error::Disconnect)?;
         Ok(true)
     }
 }

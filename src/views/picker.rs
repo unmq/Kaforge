@@ -24,7 +24,7 @@ use gpui_kit::component::{
     label::Label,
     v_flex,
 };
-use kaforge_kafka::{ConnectionConfig, ConnectionHandle, prepare_config};
+use kaforge_kafka::{ConnectionConfig, ConnectionHandle, SaslMechanism, prepare_config};
 use kaforge_ui::Dialog;
 
 pub struct ConnectionPicker {
@@ -34,7 +34,15 @@ pub struct ConnectionPicker {
     sasl_user: Entity<InputState>,
     sasl_pwd: Entity<InputState>,
     sr_url: Entity<InputState>,
+    mechanism: Entity<InputState>,
+    ssh_host: Entity<InputState>,
+    ssh_user: Entity<InputState>,
+    kerberos: Entity<InputState>,
+    msk_region: Entity<InputState>,
+    webhook: Entity<InputState>,
     yaml: Entity<TextareaState>,
+    tls: bool,
+    ssh: bool,
     selected: Option<String>,
 }
 
@@ -47,7 +55,17 @@ impl ConnectionPicker {
             sasl_user: cx.new(|cx| InputState::new(window, cx).placeholder("user")),
             sasl_pwd: cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("password")),
             sr_url: cx.new(|cx| InputState::new(window, cx).placeholder("http://localhost:8081")),
+            mechanism: cx.new(|cx| {
+                InputState::new(window, cx).placeholder("PLAIN / SCRAM-SHA-512 / GSSAPI / OAUTHBEARER / AWS-MSK-IAM")
+            }),
+            ssh_host: cx.new(|cx| InputState::new(window, cx).placeholder("bastion.example")),
+            ssh_user: cx.new(|cx| InputState::new(window, cx).placeholder("ec2-user")),
+            kerberos: cx.new(|cx| InputState::new(window, cx).placeholder("kafka/principal@REALM")),
+            msk_region: cx.new(|cx| InputState::new(window, cx).placeholder("us-east-1")),
+            webhook: cx.new(|cx| InputState::new(window, cx).placeholder("https://hooks.example/lag")),
             yaml: cx.new(|cx| TextareaState::new(window, cx)),
+            tls: false,
+            ssh: false,
             selected: None,
         }
     }
@@ -74,6 +92,23 @@ impl ConnectionPicker {
         cfg.sasl_password = self.sasl_pwd.read(cx).value().to_string();
         cfg.sasl = !cfg.sasl_user.is_empty();
         cfg.sr.url = self.sr_url.read(cx).value().to_string();
+        cfg.tls = self.tls;
+        cfg.ssh = self.ssh;
+        cfg.ssh_host = self.ssh_host.read(cx).value().to_string();
+        cfg.ssh_user = self.ssh_user.read(cx).value().to_string();
+        cfg.kerberos_principal = self.kerberos.read(cx).value().to_string();
+        cfg.msk_region = self.msk_region.read(cx).value().to_string();
+        cfg.monitor_webhook = self.webhook.read(cx).value().to_string();
+        if cfg.monitor_lag_threshold == 0 && !cfg.monitor_webhook.is_empty() {
+            cfg.monitor_lag_threshold = 10_000;
+        }
+        cfg.sasl_mechanism = SaslMechanism::from_king(&self.mechanism.read(cx).value());
+        if cfg.sasl_mechanism == SaslMechanism::Gssapi
+            || cfg.sasl_mechanism == SaslMechanism::Oauthbearer
+            || cfg.sasl_mechanism == SaslMechanism::AwsMskIam
+        {
+            cfg.sasl = true;
+        }
         if cfg.bootstrap_servers.trim().is_empty() {
             notify(cx, NotificationAction::new_error("bootstrap servers required".into()));
             return;
@@ -187,6 +222,21 @@ impl Render for ConnectionPicker {
                                 .update(cx, |input, cx| input.set_value(&cfg.sasl_password, window, cx));
                             this.sr_url
                                 .update(cx, |input, cx| input.set_value(&cfg.sr.url, window, cx));
+                            this.mechanism.update(cx, |input, cx| {
+                                input.set_value(cfg.sasl_mechanism.as_rdkafka(), window, cx)
+                            });
+                            this.ssh_host
+                                .update(cx, |input, cx| input.set_value(&cfg.ssh_host, window, cx));
+                            this.ssh_user
+                                .update(cx, |input, cx| input.set_value(&cfg.ssh_user, window, cx));
+                            this.kerberos
+                                .update(cx, |input, cx| input.set_value(&cfg.kerberos_principal, window, cx));
+                            this.msk_region
+                                .update(cx, |input, cx| input.set_value(&cfg.msk_region, window, cx));
+                            this.webhook
+                                .update(cx, |input, cx| input.set_value(&cfg.monitor_webhook, window, cx));
+                            this.tls = cfg.tls;
+                            this.ssh = cfg.ssh;
                         }
                         cx.notify();
                     }))
@@ -223,6 +273,41 @@ impl Render for ConnectionPicker {
                     .child(Input::new(&self.sasl_pwd).h(px(32.)).flex_1()),
             )
             .child(Input::new(&self.sr_url).h(px(32.)))
+            .child(Input::new(&self.mechanism).h(px(32.)))
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(
+                        Button::new("tls")
+                            .when(self.tls, |b| b.primary())
+                            .when(!self.tls, |b| b.ghost())
+                            .label(i18n_kafka(cx, "tls"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.tls = !this.tls;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        Button::new("ssh")
+                            .when(self.ssh, |b| b.primary())
+                            .when(!self.ssh, |b| b.ghost())
+                            .label(i18n_kafka(cx, "ssh"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.ssh = !this.ssh;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(Input::new(&self.ssh_host).h(px(32.)).flex_1())
+                    .child(Input::new(&self.ssh_user).h(px(32.)).flex_1()),
+            )
+            .child(Label::new(i18n_kafka(cx, "ssh_hint")).text_xs())
+            .child(Input::new(&self.kerberos).h(px(32.)))
+            .child(Input::new(&self.msk_region).h(px(32.)))
+            .child(Input::new(&self.webhook).h(px(32.)))
             .child(
                 Button::new("save-open")
                     .primary()

@@ -113,12 +113,22 @@ impl CommandPalette {
             return;
         };
         match item.command.clone() {
-            PaletteCommand::Settings => cx.dispatch_action(&SettingsAction::Open),
+            PaletteCommand::Settings => {
+                window.dispatch_action(Box::new(SettingsAction::Open), cx);
+            }
             PaletteCommand::About => open_about_window(cx),
-            PaletteCommand::Shortcuts => cx.dispatch_action(&ShortcutsAction::Toggle),
-            PaletteCommand::NewTab => cx.dispatch_action(&WorkspaceTabAction::New),
-            PaletteCommand::OpenConnection => cx.dispatch_action(&OpenConnectionAction::Open),
-            PaletteCommand::CheckUpdates => cx.dispatch_action(&UpdateAction::Check),
+            PaletteCommand::Shortcuts => {
+                window.dispatch_action(Box::new(ShortcutsAction::Toggle), cx);
+            }
+            PaletteCommand::NewTab => {
+                window.dispatch_action(Box::new(WorkspaceTabAction::New), cx);
+            }
+            PaletteCommand::OpenConnection => {
+                window.dispatch_action(Box::new(OpenConnectionAction::Open), cx);
+            }
+            PaletteCommand::CheckUpdates => {
+                window.dispatch_action(Box::new(UpdateAction::Check), cx);
+            }
         }
         self.close(window, cx);
     }

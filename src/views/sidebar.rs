@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::OpenConnectionAction;
 use crate::states::{i18n_kafka, i18n_sidebar, update_app_state_and_save};
 use crate::views::docs::DocKind;
-use crate::views::open_about_window;
+use crate::views::{open_about_window, open_connection_picker};
 use crate::workspace::{SessionStatus, Workspace};
 use gpui::{App, Entity, Window, div, prelude::*};
 use gpui_kit::component::{
@@ -61,7 +60,9 @@ impl Render for Sidebar {
                     .ghost()
                     .icon(IconName::Plus)
                     .when(!collapsed, |b| b.label(i18n_sidebar(cx, "open_connection")))
-                    .on_click(|_, _, cx| cx.dispatch_action(&OpenConnectionAction::Open)),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        open_connection_picker(this.workspace.clone(), window, cx);
+                    })),
             )
             .children(sessions.into_iter().map(|(id, name, status, has_err)| {
                 let selected = active.as_deref() == Some(&id);

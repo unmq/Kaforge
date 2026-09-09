@@ -1,0 +1,127 @@
+[common]
+cancel = "取消"
+delete = "删除"
+tab_close = "关闭标签页"
+tab_close_others = "关闭其他标签页"
+tab_close_right = "关闭右侧标签页"
+config_restored_from_backup = "{file} 无法读取，已从备份恢复。损坏的副本位于 {corrupt}。"
+config_reset = "{file} 无法读取，已重置。损坏的副本位于 {corrupt}。"
+
+[sidebar]
+home = "首页"
+todos = "待办"
+preferences = "设置"
+about = "关于"
+diagnostics_saved = "诊断包已保存到 {path}"
+diagnostics_failed = "无法导出诊断包：{error}"
+
+[settings]
+title = "设置"
+section_appearance = "外观"
+theme_light = "浅色"
+theme_dark = "深色"
+theme_system = "跟随系统"
+named_themes = "命名主题"
+lang = "语言"
+font_size = "字号"
+section_datetime = "日期与时间"
+time_zone = "时区"
+date_format = "日期格式"
+section_system = "系统"
+http_proxy = "HTTP 代理"
+tray_enabled = "显示托盘图标"
+auto_update = "自动检查更新"
+prerelease = "包含预发布版本"
+keybindings_open = "打开 keybindings.toml"
+
+[home]
+title = "欢迎"
+body = "这是一个 GPUI 起始模板。克隆仓库，运行 ./scripts/init.sh my-app，然后把这一页换成你的产品。"
+card_body = "首页、待办（redb）和设置已经接好，可以先看壳层怎么工作。"
+
+[todos]
+title = "待办"
+placeholder = "添加待办"
+add = "添加"
+empty = "还没有待办"
+delete_title = "删除待办"
+delete_body = "删除「{title}」？"
+
+[about]
+title = "关于"
+
+[update]
+check = "检查更新"
+skip_version = "跳过此版本"
+download = "下载"
+restart_body = "新版本已安装。重启后即可使用。"
+restart_later = "稍后"
+restart_now = "立即重启"
+downloading = "正在下载"
+installed_done = "更新已安装"
+download_done = "已打开安装程序"
+download_failed = "更新下载失败"
+available_title = "发现新版本"
+update_body = "有新版本可以下载。"
+found = "发现新版本"
+manual_hint = "准备好后，点标题栏的检查更新即可。"
+up_to_date = "已是最新版本"
+check_failed = "检查更新失败"
+quit_to_install_title = "退出以完成安装？"
+quit_to_install_body = "安装程序已打开。退出应用后才能替换当前版本。"
+quit_to_install_now = "立即退出"
+quit_to_install_later = "稍后"
+
+[crash]
+title = "应用意外退出"
+body = "已写下一份崩溃报告，可以把它附在 issue 里。"
+report_saved = "报告已保存到 {path}"
+open_logs = "打开日志文件夹"
+dismiss = "关闭"
+
+[hints]
+welcome_title = "欢迎使用 GPUI Starter"
+welcome_intro = "可以先试试这些："
+welcome_step_home = "首页是给你的产品占位的。"
+welcome_step_todos = "待办存在本地 redb 文件里，这是应用数据的一种写法。"
+welcome_step_palette = "打开命令面板"
+welcome_ok = "知道了"
+
+[shortcuts]
+title = "键盘快捷键"
+group_general = "通用"
+group_navigation = "导航"
+command_palette = "命令面板"
+keyboard_shortcuts = "键盘快捷键"
+zoom_in = "放大"
+zoom_out = "缩小"
+zoom_reset = "重置缩放"
+quit = "退出"
+settings = "设置"
+new_tab = "新建标签页"
+
+[command_palette]
+search_placeholder = "搜索命令"
+home = "前往首页"
+todos = "前往待办"
+settings = "打开设置"
+about = "关于"
+shortcuts = "键盘快捷键"
+new_tab = "新建标签页"
+check_updates = "检查更新"
+empty = "没有匹配的命令"
+
+[tray]
+show = "显示窗口"
+preferences = "设置"
+quit = "退出"
+
+[database]
+title = "本地数据库"
+locked_body = "另一个实例正在使用本地数据库。请先退出那个进程再试。"
+schema_too_new_body = "这个数据库是由更新的版本写入的。请升级应用，或备份后重建一个空数据库。"
+damaged_body = "本地数据库无法打开。你可以把它移到一边，然后从空库开始。"
+inaccessible_body = "无法访问本地数据库文件。"
+quit = "退出"
+rebuild = "备份并重建"
+rebuild_failed = "重建失败"

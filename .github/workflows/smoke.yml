@@ -1,0 +1,159 @@
+name: "Smoke"
+# Per-push build + first-frame smoke gate.
+#
+# The nightly (publish.yml, 18:00 UTC) exercises all platforms, but a
+# commit made during the day isn't checked until the next nightly —
+# historically the first signal was a tag build. This closes that gap on
+# every push to main, with a job per concern:
+#
+# - macos: the real first-frame gate (hard). macOS is the primary user
+#   platform and its runners have a WindowServer, so GPUI_STARTER_SMOKE_TEST is
+#   a reliable signal there — the same check publish.yml hard-gates.
+# - linux: a cross-platform *build* gate (x11/wayland features and
+#   cfg(target_os) branches only compile here) plus a hard *window* gate
+#   (`GPUI_STARTER_SMOKE_GATE=window`: the main window is created and the process
+#   survives its first seconds — catches missing libraries, Vulkan /
+#   window-creation failures and startup panics). The first-frame check
+#   stays best-effort because the frame-present signal never fires under
+#   Xvfb + llvmpipe (see publish.yml).
+# - windows: the same first-frame gate publish.yml runs, on x86_64 — the
+#   platform that shipped an invisible window in 0.4.5/0.4.6.
+#
+# No packaging, no uploads; caches are shared with publish.yml's jobs.
+on:
+  push:
+    branches: ["main"]
+    # Docs-only pushes can't affect first-frame paint — skip them. Locales
+    # and assets stay in: both are embedded into the binary and parsed on
+    # the startup path.
+    paths:
+      - "src/**"
+      - "crates/**"
+      - "locales/**"
+      - "assets/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "build.rs"
+      - ".github/workflows/smoke.yml"
+  workflow_dispatch:
+
+# A rapid push series only needs the newest commit smoked.
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in lockstep with publish.yml so this catches exactly what a
+  # release build would hit.
+  RUST_TOOLCHAIN: 1.98.0
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-darwin
+      - name: rust cache
+        # Same key as publish.yml's macos aarch64 job to share one cache.
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-build-aarch64-apple-darwin
+      - name: build
+        run: cargo build --release --features mimalloc
+      - name: smoke test (first frame must paint)
+        # Hard gate: exit 0 once the first frame paints, exit 2 if none
+        # does within 30s — the "window never appears" regression class.
+        timeout-minutes: 5
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config
+        run: ./target/release/gpui-starter
+
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev libssl-dev \
+            xvfb mesa-vulkan-drivers libvulkan1
+      - name: install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-gnu
+      - name: rust cache
+        # Same key as publish.yml's linux x86_64 job so the nightly and this
+        # gate share one build cache instead of maintaining two.
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-x86_64-unknown-linux-gnu-build
+      - name: build
+        run: cargo build --release --features mimalloc
+      - name: smoke test (window must open, process must survive)
+        # Hard gate. Boots the real binary under Xvfb with the `window`
+        # gate: exit 0 once the main window exists and 5s pass without a
+        # panic, exit 2 if that never happens within 30s. This is what a
+        # Linux user hits first — a missing libxkbcommon / Vulkan driver,
+        # a startup panic — and it is reliable headless.
+        timeout-minutes: 5
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_SMOKE_GATE: window
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config
+        run: xvfb-run -a ./target/release/gpui-starter
+      - name: smoke test (first frame must paint)
+        # Best-effort: the first-frame signal has never fired under Xvfb +
+        # llvmpipe (see the matching note in publish.yml) — this step keeps
+        # a per-push record and flips green the moment the headless present
+        # path is fixed, at which point drop continue-on-error.
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config-frame
+        run: xvfb-run -a ./target/release/gpui-starter
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-pc-windows-msvc
+      - name: rust cache
+        # Same key as publish.yml's windows x86_64 job so the nightly and this
+        # gate share one build cache.
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-x86_64-pc-windows-msvc-build
+      - name: build
+        run: cargo build --release --target x86_64-pc-windows-msvc --features mimalloc
+      - name: smoke test (first frame must paint)
+        # Hard gate, identical to publish.yml's: GUI-subsystem exes detach
+        # from the shell, so Start-Process -Wait is required to observe the
+        # exit code. A hidden window gets no WM_PAINT, no frame ever paints,
+        # and the binary exits 2 via its watchdog.
+        timeout-minutes: 5
+        shell: pwsh
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config
+        run: |
+          $p = Start-Process -FilePath .\target\x86_64-pc-windows-msvc\release\gpui-starter.exe -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            Write-Error "smoke test failed: exit code $($p.ExitCode)"
+            exit 1
+          }
+          Write-Host "smoke test passed"

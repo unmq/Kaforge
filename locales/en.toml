@@ -1,0 +1,127 @@
+[common]
+cancel = "Cancel"
+delete = "Delete"
+tab_close = "Close Tab"
+tab_close_others = "Close Other Tabs"
+tab_close_right = "Close Tabs to the Right"
+config_restored_from_backup = "{file} was unreadable and restored from its backup. The damaged copy is at {corrupt}."
+config_reset = "{file} was unreadable and has been reset. The damaged copy is at {corrupt}."
+
+[sidebar]
+home = "Home"
+todos = "Todos"
+preferences = "Settings"
+about = "About"
+diagnostics_saved = "Diagnostics saved to {path}"
+diagnostics_failed = "Could not export diagnostics: {error}"
+
+[settings]
+title = "Settings"
+section_appearance = "Appearance"
+theme_light = "Light"
+theme_dark = "Dark"
+theme_system = "System"
+named_themes = "Named themes"
+lang = "Language"
+font_size = "Font size"
+section_datetime = "Date & time"
+time_zone = "Time zone"
+date_format = "Date format"
+section_system = "System"
+http_proxy = "HTTP proxy"
+tray_enabled = "Show tray icon"
+auto_update = "Check for updates automatically"
+prerelease = "Include pre-release versions"
+keybindings_open = "Open keybindings.toml"
+
+[home]
+title = "Welcome"
+body = "This is a GPUI starter template. Clone it, run ./scripts/init.sh my-app, and replace this page with your product."
+card_body = "Home, Todos (redb), and Settings are wired up so you can see the shell working."
+
+[todos]
+title = "Todos"
+placeholder = "Add a todo"
+add = "Add"
+empty = "No todos yet"
+delete_title = "Delete todo"
+delete_body = "Delete \"{title}\"?"
+
+[about]
+title = "About"
+
+[update]
+check = "Check for Updates"
+skip_version = "Skip this version"
+download = "Download"
+restart_body = "The new version is installed. Restart to start using it."
+restart_later = "Later"
+restart_now = "Restart"
+downloading = "Downloading"
+installed_done = "Update installed"
+download_done = "Installer opened"
+download_failed = "Update download failed"
+available_title = "Update available"
+update_body = "A newer version is ready to download."
+found = "Update available"
+manual_hint = "Use Check for Updates in the title bar when you are ready."
+up_to_date = "You are up to date"
+check_failed = "Could not check for updates"
+quit_to_install_title = "Quit to finish installing?"
+quit_to_install_body = "The installer is open. Quit the app so it can replace this build."
+quit_to_install_now = "Quit now"
+quit_to_install_later = "Later"
+
+[crash]
+title = "The app closed unexpectedly"
+body = "A crash report was written so you can attach it to an issue."
+report_saved = "Report saved to {path}"
+open_logs = "Open logs folder"
+dismiss = "Dismiss"
+
+[hints]
+welcome_title = "Welcome to GPUI Starter"
+welcome_intro = "A few things to try:"
+welcome_step_home = "This Home page is the placeholder for your product."
+welcome_step_todos = "Todos are stored in a local redb file — a pattern for app data."
+welcome_step_palette = "Open the command palette"
+welcome_ok = "Got it"
+
+[shortcuts]
+title = "Keyboard shortcuts"
+group_general = "General"
+group_navigation = "Navigation"
+command_palette = "Command palette"
+keyboard_shortcuts = "Keyboard shortcuts"
+zoom_in = "Zoom in"
+zoom_out = "Zoom out"
+zoom_reset = "Reset zoom"
+quit = "Quit"
+settings = "Settings"
+new_tab = "New tab"
+
+[command_palette]
+search_placeholder = "Search commands"
+home = "Go to Home"
+todos = "Go to Todos"
+settings = "Open Settings"
+about = "About"
+shortcuts = "Keyboard shortcuts"
+new_tab = "New tab"
+check_updates = "Check for updates"
+empty = "No matching commands"
+
+[tray]
+show = "Show window"
+preferences = "Settings"
+quit = "Quit"
+
+[database]
+title = "Local database"
+locked_body = "Another instance is already using the local database. Quit that process and try again."
+schema_too_new_body = "This database was written by a newer build. Update the app, or back up and rebuild a fresh database."
+damaged_body = "The local database could not be opened. You can move it aside and start with an empty one."
+inaccessible_body = "The local database file could not be reached."
+quit = "Quit"
+rebuild = "Back up & rebuild"
+rebuild_failed = "Rebuild failed"

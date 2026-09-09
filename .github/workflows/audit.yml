@@ -1,0 +1,69 @@
+name: Security Audit
+
+on:
+  push:
+    # The default branch is `main` — with `master` here the push trigger
+    # never fired and only the daily cron ran.
+    branches:
+      - main
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "deny.toml"
+      - ".cargo/audit.toml"
+      - ".github/workflows/audit.yml"
+  # PRs are gated by the cargo-deny job below (a Dependabot bump, a new
+  # crate); the rustsec check-run job stays on push / schedule, where the
+  # token can write check runs and open issues.
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - "deny.toml"
+      - ".cargo/audit.toml"
+      - ".github/workflows/audit.yml"
+  schedule:
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # `cargo deny check`: advisories (RUSTSEC, unmaintained scoped to direct
+  # deps), licenses against the allow list, duplicate versions, and the
+  # crates.io-only source rule — `deny.toml` holds every ignore with its
+  # reason. Runs on PRs too: it only reads and prints, so a fork's
+  # read-only token is enough.
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
+  security-audit:
+    # Check runs and issues need a token that can write; a pull request from
+    # a fork has none, and cargo-deny above already gates the PR.
+    if: github.event_name != 'pull_request'
+    permissions:
+      # rustsec/audit-check posts results as a Check Run. That API requires
+      # a GitHub App token — the automatic GITHUB_TOKEN qualifies; a classic
+      # PAT (secrets.GH_TOKEN) is rejected with:
+      #   "You must authenticate via a GitHub App"
+      checks: write
+      contents: read
+      # Optional: open issues for advisories. Safe with GITHUB_TOKEN on
+      # the default branch; skip if you prefer report-only.
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Audit Check
+        # https://github.com/rustsec/audit-check
+        # Node 24 runtime is already selected by the action (v2.0.0+).
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}

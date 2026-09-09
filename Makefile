@@ -1,0 +1,71 @@
+lint:
+	typos
+	cargo clippy --all-targets --all -- --deny=warnings
+
+# Dependency gate (advisories / licenses / bans / sources); the config is
+# deny.toml. `cargo install cargo-deny --locked` once.
+deny:
+	cargo deny check advisories bans licenses sources
+
+fmt:
+	cargo fmt
+
+test:
+	cargo test --workspace
+
+# Locale hygiene on demand (tests/locale_keys.rs, also part of `make test`):
+# key parity across locales — reliable even when build.rs's
+# rerun-if-changed misses an in-place edit — plus the orphan-key scan
+# (keys translated everywhere but referenced nowhere in the source).
+check-locales:
+	cargo test --test locale_keys
+
+dev:
+	bacon run
+
+debug:
+	RUST_LOG=DEBUG make dev
+
+release:
+	cargo build --release --features mimalloc
+
+bundle:
+	cargo bundle --release  --features mimalloc
+
+udeps:
+	cargo +nightly udeps
+
+msrv:
+	cargo msrv list
+
+bloat:
+	cargo bloat --release --crates --bin gpui-starter
+
+# Release version — read from Cargo.toml's [workspace.package], the single
+# source of truth every build derives from (crates, MSI, AppImage, deb/rpm).
+VERSION := $(shell sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+
+# Prepend the changelog for the upcoming tag and sync secondary release
+# metadata (flatpak metainfo <release> entry). Assumes Cargo.toml already
+# holds the release version — use version-{patch,minor,major} to bump and
+# sync in one step. The flatpak manifest's tag/commit pin +
+# cargo-sources.json are post-tag work — run scripts/submit-flathub.sh
+# after tagging.
+version:
+	git cliff --unreleased --tag v$(VERSION) --prepend CHANGELOG.md
+	./scripts/sync-release-meta.sh v$(VERSION)
+
+# Bump Cargo.toml (+ Cargo.lock) then run `version` in a fresh make
+# invocation — VERSION is expanded at parse time, so the recursive $(MAKE)
+# is what picks up the just-bumped number.
+version-patch:
+	./scripts/bump-version.sh patch
+	$(MAKE) version
+
+version-minor:
+	./scripts/bump-version.sh minor
+	$(MAKE) version
+
+version-major:
+	./scripts/bump-version.sh major
+	$(MAKE) version

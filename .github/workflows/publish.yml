@@ -1,0 +1,574 @@
+name: "Publish"
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  schedule:
+    # Daily nightly at 18:00 UTC (02:00 Beijing). Skipped when main has no
+    # new commits since the last nightly — see the gate in prepare_vars.
+    - cron: "0 18 * * *"
+  # Manual nightly (always builds, even without new commits).
+  workflow_dispatch:
+
+env:
+  # Baked into the binaries (startup::BUILD_CHANNEL): the rolling build from
+  # main follows the pre-release update channel by default.
+  GPUI_STARTER_BUILD_CHANNEL: ${{ github.ref == 'refs/heads/main' && 'nightly' || 'stable' }}
+  GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.98.0
+  APP_NAME: "GPUI Starter"
+
+jobs:
+  prepare_vars:
+    runs-on: ubuntu-latest
+    outputs:
+      build_date: ${{ steps.date.outputs.date }}
+      should_build: ${{ steps.gate.outputs.should_build }}
+    steps:
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d %H:%M')" >> $GITHUB_OUTPUT
+      - uses: actions/checkout@v7
+      - name: Skip scheduled run when main has no new commits
+        id: gate
+        run: |
+          should_build=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # The nightly tag records the commit the previous nightly was
+            # built from (softprops/action-gh-release tags it on publish).
+            nightly_sha=$(gh api "repos/${{ github.repository }}/git/refs/tags/nightly" -q .object.sha 2>/dev/null || echo "")
+            if [ "$nightly_sha" = "${{ github.sha }}" ]; then
+              echo "main unchanged since last nightly ($nightly_sha); skipping build"
+              should_build=false
+            fi
+          fi
+          echo "should_build=$should_build" >> $GITHUB_OUTPUT
+      - name: Delete old nightly releases and tag
+        # Sweep by id via the API, not `gh release delete nightly`: that
+        # removes only the published release, while GitHub allows any
+        # number of *drafts* to share a tag_name. action-gh-release@v2
+        # creates a draft and publishes it last, so a job that dies
+        # between the two leaves an orphan draft. Those strays fed the
+        # 2026-08-08 nightly failure: a platform job's duplicate-recovery
+        # picked a week-old draft, uploaded onto it, then couldn't
+        # publish it because the tag was already owned (`already_exists`
+        # on tag_name).
+        if: github.ref == 'refs/heads/main' && steps.gate.outputs.should_build == 'true'
+        run: |
+          ids="$(
+            gh api --paginate "repos/${{ github.repository }}/releases" \
+              -q '.[] | select(.tag_name == "nightly") | .id' 2>/dev/null || true
+          )"
+          for id in $ids; do
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
+          done
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/nightly" 2>/dev/null || true
+      - name: Pre-create nightly release
+        # Same race as the tag drafts: six platform jobs each run
+        # softprops/action-gh-release for the nightly, and two finishing
+        # close together could both try to create it. Creating it here,
+        # before any platform job runs, pins the release they all update.
+        if: github.ref == 'refs/heads/main' && steps.gate.outputs.should_build == 'true'
+        run: |
+          gh release create nightly --prerelease --title "Development Build (Nightly)" \
+            --notes "Rolling build from the latest main branch — assets uploading…" || true
+      - name: Pre-create draft release for tag
+        # upload_asset.sh creates a draft when it finds none for the tag —
+        # with six platform jobs uploading in parallel, two jobs racing that
+        # check both created one (GitHub allows multiple drafts on the same
+        # tag_name). Creating the draft here, before any platform job runs,
+        # removes the race. Skip when ANY release for the tag already exists
+        # — including a hand-published one (releasing via the GitHub UI is
+        # what pushes the tag) and the draft of a re-run; `gh release create`
+        # alone would still add a draft next to a published release, and the
+        # uploads would land on that draft instead of the published release.
+        #
+        # Probe via the Releases API (paginated), not `gh release list | grep`:
+        # list+grep has missed published releases on macOS runners and then
+        # left empty untagged drafts beside the real release.
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="$GITHUB_REF_NAME"
+          ids="$(
+            gh api --paginate "repos/${{ github.repository }}/releases" \
+              -q ".[] | select(.tag_name == \"${tag}\") | .id" 2>/dev/null || true
+          )"
+          if [ -n "$ids" ]; then
+            echo "release for $tag already exists; skipping"
+          else
+            gh release create "$tag" --draft --title "$tag" --notes ""
+          fi
+  macos:
+    needs: prepare_vars
+    if: needs.prepare_vars.outputs.should_build == 'true'
+    name: macos-${{ matrix.dmg_suffix }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            dmg_suffix: aarch64
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            dmg_suffix: x86_64
+    steps:
+      - uses: actions/checkout@v7
+      - name: setup node
+        uses: actions/setup-node@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-build-${{ matrix.target }}
+      - name: install tools
+        # Lint has its own workflow (lint.yml) on every push, so the release
+        # build skips clippy/rustfmt/typos entirely. The cache restore above
+        # runs first so `cargo install` no-ops (~10 min saved) when rust-cache
+        # restored the same cargo-bundle version to ~/.cargo/bin.
+        #
+        # --locked + pinned version: an unlocked install resolves the tool's
+        # deps fresh, so a broken transitive release breaks the nightly —
+        # 2026-08-07 the (since-yanked) zune-core 0.5.2 did exactly that.
+        run: |
+          cargo install --locked cargo-bundle@0.11.0
+          brew install create-dmg
+      - name: Import Code-Signing Certificates
+        env:
+          p12_certificate: ${{ secrets.MACOS_CERTIFICATE }}
+          p12_password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          # create temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+
+          # import certificate
+          echo "$p12_certificate" | base64 --decode > certificate.p12
+          security import certificate.p12 -k "$KEYCHAIN_PATH" -P "$p12_password" -T /usr/bin/codesign
+
+          # prevent system popup asking for password
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN_PATH"
+
+          # set as default keychain
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+      - name: release
+        run: cargo bundle --release --target ${{ matrix.target }} --features mimalloc
+      - name: smoke test (first frame must paint)
+        # Boots the real binary in GPUI_STARTER_SMOKE_TEST mode: exit 0 once the
+        # first frame paints, exit 2 if none does within 30s — the failure
+        # mode of the 0.4.5/0.4.6 "window never appears" regression.
+        timeout-minutes: 3
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config
+        run: ./target/${{ matrix.target }}/release/gpui-starter
+      - name: sign app
+        env:
+          CERT_NAME: ${{ secrets.MACOS_CERTIFICATE_NAME }}
+        run: |
+          echo "Signing App with identity: $CERT_NAME"
+          APP="target/${{ matrix.target }}/release/bundle/osx/${{ env.APP_NAME }}.app"
+          # --options runtime: enable Hardened Runtime (required for notarization)
+          # --entitlements: specify entitlement file
+          # --timestamp contacts Apple's timestamp server, which is occasionally
+          # flaky ("A timestamp was expected but was not found"); retry before
+          # failing the whole release.
+          for attempt in 1 2 3 4 5; do
+            if codesign --force --deep --verbose --options runtime --timestamp \
+              --entitlements Entitlements.plist \
+              --sign "$CERT_NAME" \
+              "$APP"; then
+              echo "codesign succeeded on attempt $attempt"
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "codesign still failing after $attempt attempts" >&2
+              exit 1
+            fi
+            echo "codesign attempt $attempt failed (timestamp server?); retrying in 15s…"
+            sleep 15
+          done
+          # Fail fast if no secure timestamp was embedded (notarization needs it).
+          if ! codesign -dvv "$APP" 2>&1 | grep -q "^Timestamp="; then
+            echo "no secure timestamp embedded in the signature" >&2
+            exit 1
+          fi
+      - name: create dmg
+        run: |
+          mkdir -p release
+          DMG_NAME="release/${{ env.APP_NAME }}-${{ matrix.dmg_suffix }}.dmg"
+          APP_PATH="target/${{ matrix.target }}/release/bundle/osx/${{ env.APP_NAME }}.app"
+          # 使用 create-dmg 工具生成安装包
+          create-dmg \
+            --volname "${{ env.APP_NAME }} Installer" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "${{ env.APP_NAME }}.app" 200 190 \
+            --hide-extension "${{ env.APP_NAME }}.app" \
+            --app-drop-link 600 185 \
+            "$DMG_NAME" \
+            "$APP_PATH"
+      - name: notarize dmg
+        env:
+          AC_USERNAME: ${{ secrets.AC_USERNAME }}
+          AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
+          AC_TEAM_ID: ${{ secrets.AC_TEAM_ID }}
+        run: |
+          DMG_NAME="release/${{ env.APP_NAME }}-${{ matrix.dmg_suffix }}.dmg"
+          echo "Submitting DMG for notarization..."
+          xcrun notarytool submit "$DMG_NAME" \
+            --apple-id "$AC_USERNAME" \
+            --password "$AC_PASSWORD" \
+            --team-id "$AC_TEAM_ID" \
+            --wait
+      - name: wait for propagation
+        run: sleep 30
+      - name: staple DMG
+        run: |
+          DMG_NAME="release/${{ env.APP_NAME }}-${{ matrix.dmg_suffix }}.dmg"
+          xcrun stapler staple "$DMG_NAME"
+      - name: checksum (macos)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p meta
+          DMG_NAME="release/${{ env.APP_NAME }}-${{ matrix.dmg_suffix }}.dmg"
+          NAME="$(basename "$DMG_NAME")"
+          SHA="$(shasum -a 256 "$DMG_NAME" | awk '{print $1}')"
+          SIZE="$(stat -f%z "$DMG_NAME")"
+          echo "macos ${{ matrix.dmg_suffix }} dmg $NAME $SHA $SIZE" > "meta/macos-${{ matrix.dmg_suffix }}.txt"
+      - name: upload checksum meta (macos)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: meta-macos-${{ matrix.dmg_suffix }}
+          path: meta/macos-${{ matrix.dmg_suffix }}.txt
+      - name: upload asset
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          DMG_NAME="release/${{ env.APP_NAME }}-${{ matrix.dmg_suffix }}.dmg"
+          ./.github/workflows/upload_asset.sh "$DMG_NAME" "$GITHUB_TOKEN"
+      - name: Release Nightly Assets
+        # main pushes only — a tag push must not overwrite the nightly
+        # release with stable-build artifacts.
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: "Development Build (Nightly)"
+          body: "This is a rolling build from the latest main branch. Build date: ${{ needs.prepare_vars.outputs.build_date }}"
+          prerelease: true
+          files: |
+            ./release/*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  windows:
+    needs: prepare_vars
+    if: needs.prepare_vars.outputs.should_build == 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            suffix: x86_64
+          - target: aarch64-pc-windows-msvc
+            suffix: aarch64
+    steps:
+      - uses: actions/checkout@v7
+      - name: setup node
+        uses: actions/setup-node@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-${{ matrix.target }}-build
+      - name: release
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
+        run: |
+          # --locked + pin: see the cargo-bundle note in the macos job.
+          cargo install --locked cargo-wix@0.3.9
+          cargo build --release --target ${{ matrix.target }} --features mimalloc
+          cp target/${{ matrix.target }}/release/gpui-starter.exe ./gpui-starter.exe
+
+          cargo wix --nocapture --no-build -p gpui-starter --target ${{ matrix.target }}
+          ls target/wix/*
+          mv target/wix/gpui-starter-*.msi ./gpui-starter.msi
+      - name: smoke test (first frame must paint)
+        # x86_64 only: the aarch64 build is cross-compiled and cannot run on
+        # this runner. GUI-subsystem exes detach from the shell, so
+        # Start-Process -Wait is required to observe the exit code. This is
+        # the platform where 0.4.5/0.4.6 shipped an invisible main window —
+        # a hidden window gets no WM_PAINT, no frame ever paints, and the
+        # binary exits 2 via its watchdog.
+        if: matrix.suffix == 'x86_64'
+        timeout-minutes: 3
+        shell: pwsh
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config
+        run: |
+          $p = Start-Process -FilePath .\gpui-starter.exe -Wait -PassThru
+          if ($p.ExitCode -ne 0) {
+            Write-Error "smoke test failed: exit code $($p.ExitCode)"
+            exit 1
+          }
+          Write-Host "smoke test passed"
+      - name: package
+        shell: powershell
+        run: |
+          ls .
+          $zipName = "gpui-starter-windows-${{ matrix.suffix }}.zip"
+          Compress-Archive -Path gpui-starter.exe -Destination $zipName
+          echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+
+          # Bare .msi: consumed by winget (InstallerUrl) and by the in-app
+          # updater, which hands the download to `start` — a zip there would
+          # open Explorer instead of running the installer.
+          $msiName = "gpui-starter-windows-${{ matrix.suffix }}.msi"
+          Copy-Item gpui-starter.msi $msiName
+          echo "MSI_NAME=$msiName" >> $env:GITHUB_ENV
+
+          $msiZipName = "gpui-starter-windows-${{ matrix.suffix }}.msi.zip"
+          Compress-Archive -Path gpui-starter.msi -Destination $msiZipName
+          echo "MSI_ZIP_NAME=$msiZipName" >> $env:GITHUB_ENV
+      - name: checksum (windows)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path meta | Out-Null
+          # kind "msi" must stay on the bare installer: the in-app updater
+          # picks kind == "msi" on Windows and runs the file directly.
+          $rows = @(
+            @{ name = "$env:ZIP_NAME";     kind = "zip" },
+            @{ name = "$env:MSI_NAME";     kind = "msi" },
+            @{ name = "$env:MSI_ZIP_NAME"; kind = "msizip" }
+          )
+          $lines = foreach ($r in $rows) {
+            $sha  = (Get-FileHash $r.name -Algorithm SHA256).Hash.ToLower()
+            $size = (Get-Item $r.name).Length
+            "windows ${{ matrix.suffix }} $($r.kind) $($r.name) $sha $size"
+          }
+          Set-Content -Encoding ascii -Path "meta/windows-${{ matrix.suffix }}.txt" -Value $lines
+      - name: upload checksum meta (windows)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: meta-windows-${{ matrix.suffix }}
+          path: meta/windows-${{ matrix.suffix }}.txt
+      - name: upload asset
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          ./.github/workflows/upload_asset.sh "./${{ env.ZIP_NAME }}" "$GITHUB_TOKEN"
+          ./.github/workflows/upload_asset.sh "./${{ env.MSI_NAME }}" "$GITHUB_TOKEN"
+          ./.github/workflows/upload_asset.sh "./${{ env.MSI_ZIP_NAME }}" "$GITHUB_TOKEN"
+      - name: Release Nightly Assets
+        # main pushes only — a tag push must not overwrite the nightly
+        # release with stable-build artifacts.
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: "Development Build (Nightly)"
+          body: "This is a rolling build from the latest main branch. Build date: ${{ needs.prepare_vars.outputs.build_date }}"
+          prerelease: true
+          files: |
+            ${{ env.ZIP_NAME }}
+            ${{ env.MSI_NAME }}
+            ${{ env.MSI_ZIP_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  linux:
+    needs: prepare_vars
+    if: needs.prepare_vars.outputs.should_build == 'true'
+    name: linux-${{ matrix.suffix }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            suffix: x86_64
+            appimagetool: appimagetool-x86_64.AppImage
+
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            suffix: aarch64
+            appimagetool: appimagetool-aarch64.AppImage
+    steps:
+      - uses: actions/checkout@v7
+      - name: setup node
+        uses: actions/setup-node@v7
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          # dpkg-dev provides dpkg-shlibdeps, which cargo-deb's `$auto`
+          # dependency resolution shells out to.
+          sudo apt-get install -y libfontconfig1-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev libssl-dev dpkg-dev
+      - name: install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ runner.os }}-${{ matrix.target }}-build
+      - name: install appimagetool
+        run: |
+          wget https://github.com/AppImage/appimagetool/releases/download/continuous/${{ matrix.appimagetool }} -O appimagetool
+          chmod +x appimagetool
+          sudo mv appimagetool /usr/local/bin/
+      - name: release
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          # Packaging tools are built from source: the prebuilt binaries
+          # (taiki-e/install-action) target the newest Ubuntu's glibc and
+          # fail on this deliberately-old runner (22.04 = glibc 2.35, kept
+          # as the shipped binary's compatibility baseline). rust-cache
+          # keeps ~/.cargo/bin, so only the first run pays the compile.
+          # --locked + pin: see the cargo-bundle note in the macos job.
+          cargo install --locked cargo-appimage@2.4.0
+          cargo install --locked cargo-deb@3.7.0 cargo-generate-rpm@0.21.0
+          cargo build --release --features mimalloc
+          ls -lh target/release
+          # Native packages from the just-built binary — must run before the
+          # `mv` below empties target/release. Metadata (name, desktop entry,
+          # icons, dependency resolution) lives in [package.metadata.deb] /
+          # [package.metadata.generate-rpm] in Cargo.toml.
+          cargo deb -p gpui-starter --no-build -o ./gpui-starter-linux-${{ matrix.suffix }}.deb
+          cargo generate-rpm -o ./gpui-starter-linux-${{ matrix.suffix }}.rpm
+          mv target/release/gpui-starter ./gpui-starter
+          chmod +x gpui-starter
+          objdump -p ./gpui-starter | grep GLIBC
+          tar -czvf gpui-starter-linux-${{ matrix.suffix }}.tar.gz gpui-starter
+          cargo appimage --features mimalloc
+          mv target/appimage/gpui-starter.AppImage ./gpui-starter.AppImage
+          tar -czvf gpui-starter-${{ matrix.suffix }}.AppImage.tar.gz gpui-starter.AppImage
+      - name: smoke test (first frame must paint)
+        # Best-effort, NOT a hard gate. History: this was flipped to a hard
+        # gate on the belief that "recent runs have been consistently
+        # green" — but those greens were this very continue-on-error
+        # swallowing GPUI_STARTER_SMOKE_TIMEOUT (verified in the v0.5.4 job logs:
+        # the smoke never once passed under Xvfb + llvmpipe; the
+        # frame-present signal simply never arrives there, even with
+        # redraws forced every second). Every nightly since the hard gate
+        # (7-12 onward) failed here and shipped no Linux assets. Keep it
+        # reporting so the logs exist; tighten again only after the
+        # headless first-frame signal is fixed (gpui_wgpu / llvmpipe).
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GPUI_STARTER_SMOKE_TEST: "1"
+          GPUI_STARTER_CONFIG_DIR: ${{ runner.temp }}/gpui-starter-smoke-config
+        run: |
+          sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1
+          xvfb-run -a ./gpui-starter
+      - name: checksum (linux)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p meta
+          : > "meta/linux-${{ matrix.suffix }}.txt"
+          for entry in \
+            "gpui-starter-linux-${{ matrix.suffix }}.tar.gz tarball" \
+            "gpui-starter-${{ matrix.suffix }}.AppImage.tar.gz appimage" \
+            "gpui-starter-linux-${{ matrix.suffix }}.deb deb" \
+            "gpui-starter-linux-${{ matrix.suffix }}.rpm rpm"; do
+            set -- $entry
+            f="$1"; kind="$2"
+            sha="$(sha256sum "$f" | awk '{print $1}')"
+            size="$(stat -c%s "$f")"
+            echo "linux ${{ matrix.suffix }} $kind $f $sha $size" >> "meta/linux-${{ matrix.suffix }}.txt"
+          done
+      - name: upload checksum meta (linux)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: meta-linux-${{ matrix.suffix }}
+          path: meta/linux-${{ matrix.suffix }}.txt
+      - name: upload asset
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          ./.github/workflows/upload_asset.sh "./gpui-starter-linux-${{ matrix.suffix }}.tar.gz" "$GITHUB_TOKEN"
+          ./.github/workflows/upload_asset.sh "./gpui-starter-${{ matrix.suffix }}.AppImage.tar.gz" "$GITHUB_TOKEN"
+          ./.github/workflows/upload_asset.sh "./gpui-starter-linux-${{ matrix.suffix }}.deb" "$GITHUB_TOKEN"
+          ./.github/workflows/upload_asset.sh "./gpui-starter-linux-${{ matrix.suffix }}.rpm" "$GITHUB_TOKEN"
+      - name: Release Nightly Assets
+        # main pushes only — a tag push must not overwrite the nightly
+        # release with stable-build artifacts.
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: "Development Build (Nightly)"
+          body: "This is a rolling build from the latest main branch. Build date: ${{ needs.prepare_vars.outputs.build_date }}"
+          prerelease: true
+          files: |
+            ./*.tar.gz
+            ./*.deb
+            ./*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  # Aggregate every platform's per-asset hashes into a single SHA256SUMS plus a
+  # latest.json update manifest, and attach both to the tagged release. The
+  # in-app updater fetches latest.json (served from the always-current
+  # https://github.com/xhofe/gpui-starter/releases/latest/download/latest.json),
+  # picks the asset for its os/arch, and verifies the download against SHA256SUMS.
+  checksums:
+    needs: [macos, windows, linux]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: download checksum meta
+        uses: actions/download-artifact@v8
+        with:
+          pattern: meta-*
+          path: meta
+          merge-multiple: true
+      - name: build SHA256SUMS and latest.json
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          REPO="xhofe/gpui-starter"
+          BASE="https://github.com/$REPO/releases/download/$TAG"
+          cat meta/*.txt > all-meta.txt
+          echo "Collected assets:"; cat all-meta.txt
+
+          # SHA256SUMS: "<sha256>  <filename>" (coreutils format, sorted by name)
+          awk '{print $5"  "$4}' all-meta.txt | sort -k2 > SHA256SUMS
+
+          # latest.json: stable-channel manifest consumed by the in-app updater
+          items=""
+          while read -r os arch kind name sha size; do
+            [ -z "${name:-}" ] && continue
+            item=$(printf '{"os":"%s","arch":"%s","kind":"%s","name":"%s","url":"%s/%s","sha256":"%s","size":%s}' \
+              "$os" "$arch" "$kind" "$name" "$BASE" "$name" "$sha" "$size")
+            if [ -z "$items" ]; then items="$item"; else items="$items,$item"; fi
+          done < all-meta.txt
+          printf '{"version":"%s","tag":"%s","notes":"https://github.com/%s/releases/tag/%s","assets":[%s]}' \
+            "$VERSION" "$TAG" "$REPO" "$TAG" "$items" | jq . > latest.json
+
+          echo "--- SHA256SUMS ---"; cat SHA256SUMS
+          echo "--- latest.json ---"; cat latest.json
+      - name: upload checksum assets
+        run: |
+          ./.github/workflows/upload_asset.sh ./SHA256SUMS "$GITHUB_TOKEN"
+          ./.github/workflows/upload_asset.sh ./latest.json "$GITHUB_TOKEN"

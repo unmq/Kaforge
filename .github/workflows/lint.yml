@@ -1,0 +1,146 @@
+name: "Lint"
+on:
+    push:
+      branches: [ "**" ]
+    pull_request:
+      branches: [ "**" ]
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.98.0
+  APP_NAME: "GPUI Starter"
+
+jobs:
+  # rust-toolchain.toml is what actually compiles the code (rustup gives
+  # it precedence over any installed default, locally and on runners) —
+  # the RUST_TOOLCHAIN env in the workflows only pre-installs. Fail fast
+  # if someone bumps one without the other.
+  toolchain-pin:
+    name: toolchain pin in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: rust-toolchain.toml matches every workflow pin
+        run: |
+          pinned="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$pinned"
+          bad=0
+          for f in $(grep -l "RUST_TOOLCHAIN:" .github/workflows/*.yml); do
+            if ! grep -q "RUST_TOOLCHAIN: $pinned\$" "$f"; then
+              echo "::error::$f pins a different RUST_TOOLCHAIN than rust-toolchain.toml ($pinned) — bump them together (see rust-toolchain.toml header)."
+              bad=1
+            fi
+          done
+          exit $bad
+
+  # `rust-version` in Cargo.toml is the promise `cargo install gpui-starter`
+  # users build against — but nothing else compiles with that toolchain,
+  # so a code or dependency bump can silently break it (it did: the
+  # vergen 10.x family raised the real floor to 1.96 while the manifest
+  # still said 1.88). This job builds with exactly the promised compiler.
+  msrv:
+    name: msrv
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: read published MSRV
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-msrv
+      - name: check with the published MSRV
+        # `+<msrv>` overrides the rust-toolchain.toml pin; `--locked`
+        # matches how the README tells users to install.
+        run: cargo +${{ steps.msrv.outputs.version }} check --workspace --locked
+
+  macos:
+    name: macos-${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+      - name: setup node
+        uses: actions/setup-node@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.target }}
+      - name: install tools
+        run: |
+          rustup update
+          rustup component add clippy rustfmt
+          cargo install typos-cli
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-lint-${{ matrix.target }}
+      - name: lint
+        run: |
+          cargo fmt --check
+          make lint
+      - name: test
+        run: make test
+
+  # clippy + tests on the other two shipping platforms. macOS alone never
+  # compiles the platform forks — the SSH-agent path, the Linux key-file /
+  # Windows Credential Manager secret stores, the tray — so a warning or a
+  # broken test there used to surface only in smoke.yml's release build
+  # (which runs neither clippy nor tests). typos is skipped here: it is
+  # platform-independent and the macos job already gates it.
+  linux:
+    name: linux-x86_64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux Dependencies
+        # Same list as smoke.yml's build (gpui's x11/wayland build deps).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-gnu
+          components: clippy
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-lint-x86_64
+      - name: clippy
+        run: cargo clippy --all-targets --all -- --deny=warnings
+      - name: test
+        run: cargo test --workspace
+
+  windows:
+    name: windows-x86_64
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-pc-windows-msvc
+          components: clippy
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-lint-x86_64
+      - name: clippy
+        run: cargo clippy --all-targets --all -- --deny=warnings
+      - name: test
+        run: cargo test --workspace

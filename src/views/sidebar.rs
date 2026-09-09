@@ -111,6 +111,7 @@ impl Render for Sidebar {
             .footer(
                 v_flex()
                     .w_full()
+                    .items_start()
                     .gap_1()
                     .child(
                         Button::new("nav-settings")

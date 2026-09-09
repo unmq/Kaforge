@@ -422,7 +422,13 @@ impl AppRoot {
         let titles = session
             .tabs
             .iter()
-            .map(|tab| format!("{} · {}", i18n_kafka(cx, tab.kind.as_str()), session.name).into())
+            .map(|tab| {
+                let kind = i18n_kafka(cx, tab.kind.as_str());
+                match tab.payload.as_deref().filter(|p| !p.is_empty()) {
+                    Some(payload) => format!("{kind} · {payload}").into(),
+                    None => kind,
+                }
+            })
             .collect();
         (titles, session.active_tab)
     }
@@ -437,12 +443,15 @@ impl AppRoot {
         let active_bg = foreground.alpha(0.1);
         let muted = cx.theme().muted_foreground;
         let strip = h_flex()
+            .id("workspace-tab-strip")
             .w_full()
+            .min_w_0()
             .h(WORKSPACE_TAB_BAR_HEIGHT)
             .flex_none()
             .gap_1()
             .px_2()
             .items_center()
+            .overflow_x_scroll()
             .border_b_1()
             .border_color(border)
             .children(titles.into_iter().enumerate().map(|(ix, title)| {

@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 //! ⌘K command palette: fuzzy-ish search over navigation commands.
 
 use crate::helpers::{SettingsAction, ShortcutsAction, UpdateAction, WorkspaceTabAction};
-use crate::states::{GlobalStore, Route, i18n_command_palette};
+use crate::states::i18n_command_palette;
 use crate::views::open_about_window;
 use gpui::{
     App, Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle, Subscription, Window, div, prelude::*, px,
@@ -29,7 +29,6 @@ use gpui_kit::component::{
 
 #[derive(Clone)]
 enum PaletteCommand {
-    Route(Route),
     Settings,
     About,
     Shortcuts,
@@ -113,11 +112,6 @@ impl CommandPalette {
             return;
         };
         match item.command.clone() {
-            PaletteCommand::Route(route) => {
-                cx.global::<GlobalStore>()
-                    .clone()
-                    .update(cx, |state, cx| state.go_to(route, cx));
-            }
             PaletteCommand::Settings => cx.dispatch_action(&SettingsAction::Open),
             PaletteCommand::About => open_about_window(cx),
             PaletteCommand::Shortcuts => cx.dispatch_action(&ShortcutsAction::Toggle),
@@ -149,8 +143,6 @@ impl Render for CommandPalette {
         }
 
         self.items = vec![
-            item(i18n_command_palette(cx, "home"), PaletteCommand::Route(Route::Home)),
-            item(i18n_command_palette(cx, "todos"), PaletteCommand::Route(Route::Todos)),
             item(i18n_command_palette(cx, "settings"), PaletteCommand::Settings),
             item(i18n_command_palette(cx, "about"), PaletteCommand::About),
             item(i18n_command_palette(cx, "shortcuts"), PaletteCommand::Shortcuts),

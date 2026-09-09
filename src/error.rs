@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@ use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
-    Db { source: gpui_starter_db::error::Error },
     #[snafu(display("Invalid: {message}"))]
     Invalid { message: String },
     #[snafu(display("IO error: {source}"))]

@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ use crate::helpers::{
     ConfigRecovery, CrashReport, UpdateInfo, focus_installer_ui, get_mono_font_family, humanize_keystroke, logs_dir,
 };
 use crate::root::AppRoot;
-use crate::states::{GlobalStore, i18n_crash, i18n_hints, i18n_update, update_app_state_and_save_quiet};
+use crate::states::{
+    GlobalStore, dialog_button_props, i18n_crash, i18n_hints, i18n_update, update_app_state_and_save_quiet,
+};
 use crate::views::{DialogCallback, UpdateDialog};
 use gpui::{App, SharedString, WeakEntity, Window, div, prelude::*, px, rems};
 use gpui_kit::component::{
@@ -29,7 +31,7 @@ use gpui_kit::component::{
     text::{TextView, TextViewStyle},
     v_flex,
 };
-use gpui_starter_ui::Dialog;
+use kaforge_ui::Dialog;
 use rust_i18n::t;
 use std::{cell::Cell, rc::Rc};
 use tracing::{error, info};
@@ -102,7 +104,7 @@ pub(crate) fn open_welcome_dialog(window: &mut Window, cx: &mut App) {
     let intro = i18n_hints(cx, "welcome_intro");
     let steps: [SharedString; 3] = [
         i18n_hints(cx, "welcome_step_home"),
-        i18n_hints(cx, "welcome_step_todos"),
+        i18n_hints(cx, "welcome_step_connections"),
         format!(
             "{} ({})",
             i18n_hints(cx, "welcome_step_palette"),
@@ -113,6 +115,7 @@ pub(crate) fn open_welcome_dialog(window: &mut Window, cx: &mut App) {
     Dialog::new(i18n_hints(cx, "welcome_title"))
         .icon(IconName::Info)
         .child(move || v_flex().gap_2().child(intro.clone()).children(steps.iter().cloned()))
+        .button_props(dialog_button_props(cx))
         .ok_text(i18n_hints(cx, "welcome_ok"))
         .open(window, cx);
 }

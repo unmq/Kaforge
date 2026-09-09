@@ -9,7 +9,7 @@ config_reset = "{file} was unreadable and has been reset. The damaged copy is at
 
 [sidebar]
 home = "Home"
-todos = "Todos"
+open_connection = "Open connection"
 preferences = "Settings"
 about = "About"
 diagnostics_saved = "Diagnostics saved to {path}"
@@ -35,17 +35,8 @@ prerelease = "Include pre-release versions"
 keybindings_open = "Open keybindings.toml"
 
 [home]
-title = "Welcome"
-body = "This is a GPUI starter template. Clone it, run ./scripts/init.sh my-app, and replace this page with your product."
-card_body = "Home, Todos (redb), and Settings are wired up so you can see the shell working."
-
-[todos]
-title = "Todos"
-placeholder = "Add a todo"
-add = "Add"
-empty = "No todos yet"
-delete_title = "Delete todo"
-delete_body = "Delete \"{title}\"?"
+title = "No open connection"
+body = "Open a saved Kafka cluster from the sidebar to start browsing topics."
 
 [about]
 title = "About"
@@ -80,10 +71,10 @@ open_logs = "Open logs folder"
 dismiss = "Dismiss"
 
 [hints]
-welcome_title = "Welcome to GPUI Starter"
+welcome_title = "Welcome to Kaforge"
 welcome_intro = "A few things to try:"
-welcome_step_home = "This Home page is the placeholder for your product."
-welcome_step_todos = "Todos are stored in a local redb file — a pattern for app data."
+welcome_step_home = "The sidebar lists Kafka connections you currently have open."
+welcome_step_connections = "Use Open connection to pick a saved cluster or create a new one."
 welcome_step_palette = "Open the command palette"
 welcome_ok = "Got it"
 
@@ -102,8 +93,6 @@ new_tab = "New tab"
 
 [command_palette]
 search_placeholder = "Search commands"
-home = "Go to Home"
-todos = "Go to Todos"
 settings = "Open Settings"
 about = "About"
 shortcuts = "Keyboard shortcuts"
@@ -115,13 +104,3 @@ empty = "No matching commands"
 show = "Show window"
 preferences = "Settings"
 quit = "Quit"
-
-[database]
-title = "Local database"
-locked_body = "Another instance is already using the local database. Quit that process and try again."
-schema_too_new_body = "This database was written by a newer build. Update the app, or back up and rebuild a fresh database."
-damaged_body = "The local database could not be opened. You can move it aside and start with an empty one."
-inaccessible_body = "The local database file could not be reached."
-quit = "Quit"
-rebuild = "Back up & rebuild"
-rebuild_failed = "Rebuild failed"

@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -206,7 +206,7 @@ impl InstanceServer {
     /// calling `on_message` (from that thread) for each authenticated one.
     pub fn serve(self, on_message: impl Fn(InstanceMessage) + Send + 'static) {
         let spawned = std::thread::Builder::new()
-            .name("gpui-starter-instance".to_string())
+            .name("kaforge-instance".to_string())
             .spawn(move || {
                 for stream in self.listener.incoming() {
                     let Ok(stream) = stream else {

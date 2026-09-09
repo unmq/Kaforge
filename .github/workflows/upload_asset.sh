@@ -18,7 +18,7 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 
-repo="xhofe/gpui-starter"
+repo="unmq/Kaforge"
 file_path=$1
 
 # gh reads GH_TOKEN / GITHUB_TOKEN from the environment; the second argument

@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,18 +36,18 @@ const LOG_BYTES: usize = 2 * 1024 * 1024;
 pub struct DiagnosticsInput {
     /// Free-text facts: version, OS, config dir, …
     pub summary: String,
-    /// `gpui-starter.toml` with secrets redacted.
+    /// `kaforge.toml` with secrets redacted.
     pub app_config: String,
 }
 
-/// Writes `gpui-starter-diagnostics-<stamp>.zip` to the Downloads folder (the config
+/// Writes `kaforge-diagnostics-<stamp>.zip` to the Downloads folder (the config
 /// dir when there is none — App Store sandbox) and returns its path.
 pub fn export_diagnostics(input: &DiagnosticsInput) -> io::Result<PathBuf> {
     let dir = get_download_dir()
         .or_else(|| get_or_create_config_dir().ok())
         .ok_or_else(|| io::Error::other("no directory to write the bundle to"))?;
     let path = dir.join(format!(
-        "gpui-starter-diagnostics-{}.zip",
+        "kaforge-diagnostics-{}.zip",
         Local::now().format("%Y%m%d-%H%M%S")
     ));
     let archive = build_archive(input, logs_dir().as_deref())?;
@@ -58,7 +58,7 @@ pub fn export_diagnostics(input: &DiagnosticsInput) -> io::Result<PathBuf> {
 fn build_archive(input: &DiagnosticsInput, logs: Option<&Path>) -> io::Result<Vec<u8>> {
     let mut zip = ZipWriter::new();
     zip.add("summary.txt", input.summary.as_bytes())?;
-    zip.add("gpui-starter.toml", input.app_config.as_bytes())?;
+    zip.add("kaforge.toml", input.app_config.as_bytes())?;
     if let Some(logs) = logs {
         for (name, bytes) in collect_logs(logs) {
             zip.add(&format!("logs/{name}"), &bytes)?;
@@ -76,9 +76,9 @@ fn collect_logs(dir: &Path) -> Vec<(String, Vec<u8>)> {
         .flatten()
         .filter_map(|e| e.file_name().into_string().ok())
         .collect();
-    // `gpui-starter.log.YYYY-MM-DD` sorts chronologically by name.
+    // `kaforge.log.YYYY-MM-DD` sorts chronologically by name.
     names.sort();
-    let mut rolling: Vec<&String> = names.iter().filter(|n| n.starts_with("gpui-starter.log")).collect();
+    let mut rolling: Vec<&String> = names.iter().filter(|n| n.starts_with("kaforge.log")).collect();
     rolling.reverse();
     let crashes = names.iter().filter(|n| n.starts_with(CRASH_REPORT_PREFIX));
     rolling
@@ -105,11 +105,11 @@ mod tests {
 
     #[test]
     fn bundle_holds_summary_configs_latest_logs_and_crash_reports() {
-        let dir = std::env::temp_dir().join(format!("gpui-starter-diag-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kaforge-diag-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("scratch");
         for day in ["2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22"] {
-            fs::write(dir.join(format!("gpui-starter.log.{day}")), format!("log {day}")).expect("log");
+            fs::write(dir.join(format!("kaforge.log.{day}")), format!("log {day}")).expect("log");
         }
         fs::write(dir.join("crash-1.log"), "message: boom").expect("crash");
         fs::write(dir.join("crash.pending"), "crash-1.log").expect("marker");
@@ -124,17 +124,17 @@ mod tests {
         let text = String::from_utf8_lossy(&archive);
         for expected in [
             "summary.txt",
-            "gpui-starter.toml",
-            "logs/gpui-starter.log.2026-08-22",
-            "logs/gpui-starter.log.2026-08-21",
-            "logs/gpui-starter.log.2026-08-20",
+            "kaforge.toml",
+            "logs/kaforge.log.2026-08-22",
+            "logs/kaforge.log.2026-08-21",
+            "logs/kaforge.log.2026-08-20",
             "logs/crash-1.log",
         ] {
             assert!(text.contains(expected), "missing {expected}");
         }
         for excluded in [
-            "gpui-starter.log.2026-08-19",
-            "gpui-starter.log.2026-08-18",
+            "kaforge.log.2026-08-19",
+            "kaforge.log.2026-08-18",
             "crash.pending",
             "unrelated.txt",
         ] {

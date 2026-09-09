@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ impl TimeZonePref {
     }
 }
 
-/// One selectable date + time layout. `id` is what `gpui-starter.toml` stores.
+/// One selectable date + time layout. `id` is what `kaforge.toml` stores.
 #[derive(Debug, PartialEq, Eq)]
 pub struct DateFormat {
     pub id: &'static str,

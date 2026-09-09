@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,28 +33,28 @@ use std::{
 };
 
 /// Process-wide config-dir override, set at most once. Unit tests set it via
-/// [`override_config_dir`]; external runs (CI smoke) set `GPUI_STARTER_CONFIG_DIR`.
+/// [`override_config_dir`]; external runs (CI smoke) set `KAFORGE_CONFIG_DIR`.
 static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Redirect the config directory for this process (first call wins). Test-only:
-/// keeps state persistence in tests away from the real `gpui-starter.toml`.
+/// keeps state persistence in tests away from the real `kaforge.toml`.
 #[cfg(test)]
 pub fn override_config_dir(path: PathBuf) {
     let _ = CONFIG_DIR_OVERRIDE.set(path);
 }
 
 /// The active config-dir override, if any — set in-process via
-/// [`override_config_dir`] or externally via `GPUI_STARTER_CONFIG_DIR`. `Some` means
+/// [`override_config_dir`] or externally via `KAFORGE_CONFIG_DIR`. `Some` means
 /// the config dir is isolated (unit tests / CI smoke runs), which callers can
 /// use to keep machine-local side effects (e.g. the encryption master key)
 /// beside that isolated config rather than in a shared store like the OS
-/// keychain. Prefer this over reading `GPUI_STARTER_CONFIG_DIR` directly so both
+/// keychain. Prefer this over reading `KAFORGE_CONFIG_DIR` directly so both
 /// override mechanisms stay covered by one source of truth.
 pub fn config_dir_override() -> Option<PathBuf> {
     if let Some(dir) = CONFIG_DIR_OVERRIDE.get() {
         return Some(dir.clone());
     }
-    match env::var("GPUI_STARTER_CONFIG_DIR") {
+    match env::var("KAFORGE_CONFIG_DIR") {
         Ok(dir) if !dir.trim().is_empty() => Some(PathBuf::from(dir)),
         _ => None,
     }
@@ -148,7 +148,7 @@ pub fn get_download_dir() -> Option<PathBuf> {
 /// This function handles configuration directory management with backward compatibility:
 /// 1. Determines the platform-specific config directory (using XDG on Linux, ~/Library on macOS, etc.)
 /// 2. Creates the directory if it doesn't exist
-/// 3. Migrates old configuration from `~/.gpui-starter` to the new location if found
+/// 3. Migrates old configuration from `~/.kaforge` to the new location if found
 ///
 /// # Returns
 /// The path to the configuration directory
@@ -159,17 +159,17 @@ pub fn get_download_dir() -> Option<PathBuf> {
 /// - Directory creation fails
 ///
 /// # Platform-specific Locations
-/// - **Linux**: `~/.config/gpui-starter/` or `$XDG_CONFIG_HOME/gpui-starter/`
-/// - **macOS**: `~/Library/Application Support/com.example.gpui-starter/`
-/// - **Windows**: `C:\Users\<User>\AppData\Roaming\example\gpui-starter\config\`
+/// - **Linux**: `~/.config/kaforge/` or `$XDG_CONFIG_HOME/kaforge/`
+/// - **macOS**: `~/Library/Application Support/com.example.kaforge/`
+/// - **Windows**: `C:\Users\<User>\AppData\Roaming\example\kaforge\config\`
 ///
 /// # Migration
-/// If an old `~/.gpui-starter` directory exists, its contents are copied to the new
+/// If an old `~/.kaforge` directory exists, its contents are copied to the new
 /// location and the old directory is removed.
 pub fn get_or_create_config_dir() -> Result<PathBuf> {
-    // Isolation override for CI smoke runs (`GPUI_STARTER_CONFIG_DIR=…`) and unit
+    // Isolation override for CI smoke runs (`KAFORGE_CONFIG_DIR=…`) and unit
     // tests (`override_config_dir`) — anything exercising state persistence
-    // must never touch the real user profile. Skips the `~/.gpui-starter` migration.
+    // must never touch the real user profile. Skips the `~/.kaforge` migration.
     if let Some(dir) = config_dir_override() {
         if !dir.exists() {
             fs::create_dir_all(&dir)?;
@@ -177,7 +177,7 @@ pub fn get_or_create_config_dir() -> Result<PathBuf> {
         return Ok(dir);
     }
     // Get platform-specific configuration directory
-    let Some(project_dirs) = ProjectDirs::from("com", "example", "gpui-starter") else {
+    let Some(project_dirs) = ProjectDirs::from("com", "example", "kaforge") else {
         return Err(std::io::Error::other("project directories not found".to_string()));
     };
 
@@ -188,13 +188,13 @@ pub fn get_or_create_config_dir() -> Result<PathBuf> {
         fs::create_dir_all(config_dir)?;
     }
 
-    // Handle migration from old ~/.gpui-starter location
+    // Handle migration from old ~/.kaforge location
     let Some(home) = home_dir() else {
         // If home directory cannot be determined, just return the config dir
         return Ok(config_dir.to_path_buf());
     };
 
-    let old_config_path = home.join(".gpui-starter");
+    let old_config_path = home.join(".kaforge");
     if old_config_path.exists() {
         // Attempt to copy files from old location (ignore errors)
         let _ = copy_dir_recursive(&old_config_path, config_dir);
@@ -213,7 +213,7 @@ pub fn get_or_create_config_dir() -> Result<PathBuf> {
 /// `<config_dir>/dev` — where a `RUST_ENV=dev` run keeps *everything*, under the
 /// same file names as production.
 ///
-/// Isolation used to be per-file (`gpui-starter-dev.toml`), which only covered
+/// Isolation used to be per-file (`kaforge-dev.toml`), which only covered
 /// a couple of files. One directory, one rule: dev writes never leave `dev/`.
 fn dev_config_dir(config_dir: &Path) -> Result<PathBuf> {
     let dev_dir = config_dir.join("dev");
@@ -225,14 +225,9 @@ fn dev_config_dir(config_dir: &Path) -> Result<PathBuf> {
     // First run on the new layout — carry the old dev session over instead of
     // resetting it. Best-effort throughout: a failure just leaves that file out.
     // Legacy per-file variants move in under their production names.
-    for (legacy, name) in [
-        ("gpui-starter-dev.toml", "gpui-starter.toml"),
-        ("gpui-starter-dev.redb", "gpui-starter.redb"),
-    ] {
-        let from = config_dir.join(legacy);
-        if from.exists() {
-            let _ = fs::rename(&from, dev_dir.join(name));
-        }
+    let from = config_dir.join("kaforge-dev.toml");
+    if from.exists() {
+        let _ = fs::rename(&from, dev_dir.join("kaforge.toml"));
     }
     // These were *shared* with production, so dev would otherwise start with no
     // servers at all — and the proto/script configs it already holds key off
@@ -257,7 +252,7 @@ static CONFIG_WRITE_LOCK: Mutex<()> = Mutex::new(());
 static CONFIG_RECOVERIES: Mutex<Vec<ConfigRecovery>> = Mutex::new(Vec::new());
 
 /// Path of the rolling backup kept beside a config file
-/// (`gpui-starter.toml` → `gpui-starter.toml.bak`).
+/// (`kaforge.toml` → `kaforge.toml.bak`).
 pub fn backup_path(path: &Path) -> PathBuf {
     sibling_with_suffix(path, ".bak")
 }
@@ -453,7 +448,7 @@ mod tests {
 
     impl Scratch {
         fn new(name: &str) -> Self {
-            let dir = env::temp_dir().join(format!("gpui-starter-fs-{}-{name}", std::process::id()));
+            let dir = env::temp_dir().join(format!("kaforge-fs-{}-{name}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).expect("create scratch dir");
             Self(dir)

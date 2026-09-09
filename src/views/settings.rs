@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ use gpui_kit::component::{
     switch::Switch,
     v_flex,
 };
-use gpui_starter_ui::{Select, SelectEvent};
+use kaforge_ui::{Select, SelectEvent};
 
 pub fn open_settings_window(cx: &mut App) {
     let bounds = Bounds::centered(active_window_display(cx), size(px(640.), px(720.)), cx);

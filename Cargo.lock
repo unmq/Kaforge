@@ -3313,72 +3313,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f3ea75672348f37d94472e579f5979ee19b744d0fa5aaadc2fe129ccafa80b"
 
 [[package]]
-name = "gpui-starter"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "chrono",
- "directories",
- "flate2",
- "gpui-kit",
- "gpui-pre",
- "gpui-pre-macros",
- "gpui-pre-platform",
- "gpui-starter-db",
- "gpui-starter-ui",
- "home",
- "humansize",
- "image",
- "mimalloc",
- "os_info",
- "rust-embed",
- "rust-i18n",
- "schemars",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "smol",
- "snafu",
- "sys-locale",
- "tempfile",
- "time",
- "toml 0.9.12+spec-1.1.0",
- "toml 1.1.4+spec-1.1.0",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "tray-icon",
- "ureq",
- "uuid",
- "vergen",
- "vergen-git2",
- "winres",
-]
-
-[[package]]
-name = "gpui-starter-db"
-version = "0.1.0"
-dependencies = [
- "redb",
- "serde",
- "serde_json",
- "snafu",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "gpui-starter-ui"
-version = "0.1.0"
-dependencies = [
- "gpui-kit",
- "gpui-pre",
- "indexmap",
-]
-
-[[package]]
 name = "granit-parser"
 version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4175,6 +4109,59 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "kaforge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "chrono",
+ "directories",
+ "flate2",
+ "gpui-kit",
+ "gpui-pre",
+ "gpui-pre-macros",
+ "gpui-pre-platform",
+ "home",
+ "humansize",
+ "image",
+ "kaforge-ui",
+ "mimalloc",
+ "os_info",
+ "rust-embed",
+ "rust-i18n",
+ "schemars",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "smol",
+ "snafu",
+ "sys-locale",
+ "tempfile",
+ "time",
+ "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.4+spec-1.1.0",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "tray-icon",
+ "ureq",
+ "uuid",
+ "vergen",
+ "vergen-git2",
+ "winres",
+]
+
+[[package]]
+name = "kaforge-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui-kit",
+ "gpui-pre",
+ "indexmap",
 ]
 
 [[package]]
@@ -6402,15 +6389,6 @@ name = "reborrow"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
-
-[[package]]
-name = "redb"
-version = "4.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de6c3b63e007e90ce536ec2ae4690826136a20ec8dbbbb400daef1bb999d2e36"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "redox_syscall"

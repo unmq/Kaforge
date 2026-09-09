@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,10 +31,6 @@ pub fn i18n_settings(cx: &App, key: &str) -> SharedString {
 pub fn i18n_home(cx: &App, key: &str) -> SharedString {
     let locale = cx.global::<GlobalStore>().read(cx).locale();
     t!(format!("home.{key}"), locale = locale).into()
-}
-pub fn i18n_todos(cx: &App, key: &str) -> SharedString {
-    let locale = cx.global::<GlobalStore>().read(cx).locale();
-    t!(format!("todos.{key}"), locale = locale).into()
 }
 pub fn i18n_about(cx: &App, key: &str) -> SharedString {
     let locale = cx.global::<GlobalStore>().read(cx).locale();

@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 This is a native desktop app starter built in Rust with [GPUI](https://www.gpui.rs/) and `gpui-component`, both taken from crates.io through `gpui-kit`. GPUI is the `gpui-pre-*` snapshot family gpui-kit pins (renamed back to `gpui` / `gpui_platform` / `gpui_macros` in `[workspace.dependencies]`, so source keeps `gpui::…`). Components and icon assets are `gpui_kit::component::…` / `gpui_kit::assets::Assets`. Bump the four together and confirm one `gpui-pre` in `Cargo.lock`.
 
-Placeholder identity (before `./scripts/init.sh my-app`): display **GPUI Starter**, kebab/bin/`APP_ID` `gpui-starter`, snake `gpui_starter`, env `GPUI_STARTER_*`, bundle `com.example.gpui-starter`. Application types stay generic (`AppState`, `GlobalStore`, `Card`) so init does not have to rename them.
+Placeholder identity (before `./scripts/init.sh my-app`): display **Kaforge**, kebab/bin/`APP_ID` `kaforge`, snake `kaforge`, env `KAFORGE_*`, bundle `com.example.kaforge`. Application types stay generic (`AppState`, `GlobalStore`, `Card`) so init does not have to rename them.
 
 ## Commands
 
@@ -24,32 +24,31 @@ Clippy `unwrap_used = "deny"` is set crate-wide **including tests** — use `.ex
 
 ## Workspace layout
 
-Cargo workspace: root binary crate `gpui-starter` (bin name `gpui-starter`) plus `members = ["crates/*"]`. Shared dependency versions live in the root `[workspace.dependencies]`.
+Cargo workspace: root binary crate `kaforge` (bin name `kaforge`) plus `members = ["crates/*"]`. Shared dependency versions live in the root `[workspace.dependencies]`.
 
-- `crates/gpui-starter-ui` — reusable widgets (`Card`, `Dialog`, `Form`, `Select`, `TextTable`, …). **Separate crate**: it cannot use `crate::helpers::*` from the app. Platform-specific values (e.g. monospace font family) and localized strings must be passed in by the caller.
-- `crates/gpui-starter-db` — redb-backed local storage. Every value struct carries container-level `#[serde(default)]` (adding a field must never make an existing row unreadable). A loader **skips** a row it cannot read, never deletes it. A new `TableDefinition` must also be opened in `ensure_schema`. The demo table is `todos`.
+- `crates/kaforge-ui` — reusable widgets (`Card`, `Dialog`, `Form`, `Select`, `TextTable`, …). **Separate crate**: it cannot use `crate::helpers::*` from the app. Platform-specific values (e.g. monospace font family) and localized strings must be passed in by the caller.
 
-Preferences persist to `gpui-starter.toml` via `update_app_state_and_save`. App data that belongs in redb goes in `gpui-starter-db`.
+Preferences persist to `kaforge.toml` via `update_app_state_and_save`. Saved Kafka connections persist to `connections.toml`.
 
 ## Architecture
 
 **State (`src/states/`)** — the source of truth, GPUI entities.
 
-- `GlobalStore` / `AppState` (`app.rs`): app-wide config. Persisted to `gpui-starter.toml` via `update_app_state_and_save(cx, "action", |state, _| …)` (async, debounced). Add a field + getter/setter here to persist a new preference.
+- `GlobalStore` / `AppState` (`app.rs`): app-wide config. Persisted to `kaforge.toml` via `update_app_state_and_save(cx, "action", |state, _| …)` (async, debounced). Add a field + getter/setter here to persist a new preference.
 - Events: `GlobalEvent` (notifications, `RouteChanged`, update progress) drives view updates via `cx.subscribe`.
 - i18n: `t!("section.key")` (rust-i18n). Use the `i18n_<section>(cx, key)` helpers in `states/i18n.rs`, each **individually** re-exported from `states.rs`.
 
-**Views (`src/views/`)** — one GPUI view per route/panel. `content.rs` is the route switcher. `root.rs`'s `AppRoot` holds sidebar + workspace tabs (`Vec<ContentTab>`, one `Content` per tab; only the active tab reacts to global route broadcasts) + title bar, and registers global `.on_action` handlers. `main.rs` is the entry point; `dialogs.rs` holds app-level dialogs (crash, welcome, update); `window_setup.rs` window placement + theme application; `startup.rs` CLI flags, smoke gates and the database recovery window.
+**Views (`src/views/`)** — one GPUI view per route/panel. `content.rs` is the route switcher. `root.rs`'s `AppRoot` holds sidebar + workspace tabs (`Vec<ContentTab>`, one `Content` per tab; only the active tab reacts to global route broadcasts) + title bar, and registers global `.on_action` handlers. `main.rs` is the entry point; `dialogs.rs` holds app-level dialogs (crash, welcome, update); `window_setup.rs` window placement + theme application; `startup.rs` CLI flags and smoke gates.
 
 **Timestamps:** every user-facing date / time goes through `helpers/datetime.rs` (`format_unix_secs`, `now_datetime`, …), which applies the Settings time-zone and date-layout preference from a process-wide slot (`set_datetime_prefs`). Never call `Local::now().format(…)` in a view for display — file-name stamps and diagnostics are the only fixed-format exceptions.
 
 **Keybindings:** user-configurable shortcuts are the `HOT_KEYS` table in `helpers/action.rs`. A new user-visible shortcut is one table row, never a second hand-written list. Overrides live in `<config_dir>/keybindings.toml` (restart to apply).
 
-**Single instance:** `claim_instance` (before `init_database`) forwards a second launch to the running process over a loopback socket + token (`helpers/single_instance.rs`).
+**Single instance:** `claim_instance` forwards a second launch to the running process over a loopback socket + token (`helpers/single_instance.rs`).
 
-**Diagnostics:** title-bar menu → Export Diagnostics writes `gpui-starter-diagnostics-<stamp>.zip` via `helpers/diagnostics.rs`. Add new secrets to `AppState::redacted_toml`.
+**Diagnostics:** title-bar menu → Export Diagnostics writes `kaforge-diagnostics-<stamp>.zip` via `helpers/diagnostics.rs`. Add new secrets to `AppState::redacted_toml`.
 
-**Smoke mode:** `GPUI_STARTER_SMOKE_TEST=1` exits 0 on the first painted frame; `GPUI_STARTER_SMOKE_GATE=window` accepts "window created + 5s alive".
+**Smoke mode:** `KAFORGE_SMOKE_TEST=1` exits 0 on the first painted frame; `KAFORGE_SMOKE_GATE=window` accepts "window created + 5s alive".
 
 **Imports:** bring items into scope with `use` declarations at the top of the file. Do **not** write fully-qualified paths inline except to disambiguate two same-named types or a single use inside a macro.
 
@@ -77,7 +76,7 @@ The general GPUI / gpui-component rules live in the `gpui-kit` and `gpui-kit-des
 
 ## Conventions
 
-- UI components: **prefer `gpui-component`'s built-in components first** — the `gpui-kit` skill's component catalog is the list to check. Only when `gpui-component` has no suitable component, use `crates/gpui-starter-ui`.
+- UI components: **prefer `gpui-component`'s built-in components first** — the `gpui-kit` skill's component catalog is the list to check. Only when `gpui-component` has no suitable component, use `crates/kaforge-ui`.
 - Destructive ops route through a confirm dialog (`Dialog::new_alert` + `dialog_button_props`).
 - Keep the dependency surface lean.
 - Comments in the code always use English.

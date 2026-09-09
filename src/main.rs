@@ -11,10 +11,9 @@ use crate::states::{AppState, GlobalStore, HINT_WELCOME, flush_app_state_on_quit
 use crate::views::open_about_window;
 #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
 use gpui::TitlebarOptions;
-use gpui::{App, Bounds, Menu, MenuItem, OsAction, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui::{App, Menu, MenuItem, OsAction, WindowBounds, WindowOptions, prelude::*, px, size};
 use gpui_kit::component::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use gpui_kit::component::{Root, Theme};
-use gpui_starter_db::{init_database, open_failure_kind};
 use sys_locale::get_locale;
 use tracing::{error, info};
 
@@ -70,40 +69,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_dir,
         is_app_store_build = is_app_store_build(),
         sys_locale = ?get_locale(),
-        "gpui-starter launch"
+        "kaforge launch"
     );
     if is_smoke_test() {
         std::thread::spawn(|| {
             std::thread::sleep(std::time::Duration::from_secs(30));
-            eprintln!("GPUI_STARTER_SMOKE_TIMEOUT: no frame painted within 30s");
+            eprintln!("KAFORGE_SMOKE_TIMEOUT: no frame painted within 30s");
             std::process::exit(2);
         });
     }
     let app = gpui_platform::application().with_assets(assets::Assets);
     app.on_open_urls(|_urls| post_instance_message(InstanceMessage::default()));
     let app_state = AppState::try_new().unwrap_or_else(|e| {
-        error!(error = %e, "gpui-starter.toml could not be loaded; starting with defaults");
+        error!(error = %e, "kaforge.toml could not be loaded; starting with defaults");
         AppState::new()
     });
     if claim_instance(&InstanceMessage::default()) == InstanceRole::Forwarded {
-        return Ok(());
-    }
-    let db_path = match database_path() {
-        Ok(path) => path,
-        Err(e) => {
-            error!(error = %e, "config dir unavailable; showing the recovery window");
-            run_db_recovery(
-                app,
-                app_state,
-                gpui_starter_db::DbOpenFailure::Inaccessible(e.to_string()),
-            );
-            return Ok(());
-        }
-    };
-    if let Err(e) = init_database(&db_path) {
-        let failure = open_failure_kind(&e);
-        error!(error = %e, failure = ?failure, "init database failed; showing the recovery window");
-        run_db_recovery(app, app_state, failure);
         return Ok(());
     }
     app.run(move |cx| {
@@ -111,38 +92,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         launch(cx, app_state);
     });
     Ok(())
-}
-
-fn run_db_recovery(app: gpui::Application, app_state: AppState, failure: gpui_starter_db::DbOpenFailure) {
-    app.run(move |cx| {
-        gpui_kit::component::init(cx);
-        let mode = match app_state.theme() {
-            Some(m) => m,
-            None => theme_mode_for_appearance(cx.window_appearance()),
-        };
-        Theme::change(mode, None, cx);
-        apply_default_ui_font_size(cx);
-        cx.activate(true);
-        let bounds = Bounds::centered(None, size(px(540.), px(300.)), cx);
-        let opened = cx.open_window(
-            with_app_identity(WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(440.), px(240.))),
-                ..Default::default()
-            }),
-            |window, cx| {
-                window.on_window_should_close(cx, |_window, cx| {
-                    cx.quit();
-                    true
-                });
-                let view = cx.new(|_| DatabaseErrorView::new(failure, app_state));
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
-        if opened.is_err() {
-            cx.quit();
-        }
-    });
 }
 
 fn activate_from_instance(_message: InstanceMessage, cx: &mut App) {
@@ -309,16 +258,16 @@ pub(crate) fn launch(cx: &mut App, app_state: AppState) {
                 #[cfg(target_os = "macos")]
                 window.on_next_frame(|window, _cx| window.activate_window());
                 if is_smoke_test() {
-                    println!("GPUI_STARTER_SMOKE_WINDOW");
+                    println!("KAFORGE_SMOKE_WINDOW");
                     if smoke_gate_is_window() {
                         std::thread::spawn(|| {
                             std::thread::sleep(std::time::Duration::from_secs(5));
-                            println!("GPUI_STARTER_SMOKE_OK (window gate)");
+                            println!("KAFORGE_SMOKE_OK (window gate)");
                             std::process::exit(0);
                         });
                     }
                     window.on_next_frame(|_window, _cx| {
-                        println!("GPUI_STARTER_SMOKE_OK");
+                        println!("KAFORGE_SMOKE_OK");
                         std::process::exit(0);
                     });
                 }

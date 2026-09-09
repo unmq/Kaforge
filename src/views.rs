@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ mod settings;
 mod shortcuts_overlay;
 mod sidebar;
 mod title_bar;
-mod todos;
 mod update_dialog;
 
 pub use about::open_about_window;

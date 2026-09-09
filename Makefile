@@ -39,7 +39,7 @@ msrv:
 	cargo msrv list
 
 bloat:
-	cargo bloat --release --crates --bin gpui-starter
+	cargo bloat --release --crates --bin kaforge
 
 # Release version — read from Cargo.toml's [workspace.package], the single
 # source of truth every build derives from (crates, MSI, AppImage, deb/rpm).

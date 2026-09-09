@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::constants::APP_NAME;
-use crate::helpers::{card_background, now_datetime};
+use crate::helpers::{card_background, format_unix_secs, now_datetime};
 use crate::states::i18n_home;
+use chrono::Utc;
 use gpui::{App, Window, prelude::*};
-use gpui_kit::component::{ActiveTheme, h_flex, label::Label, v_flex};
-use gpui_starter_ui::Card;
+use gpui_kit::component::{ActiveTheme, label::Label, v_flex};
 
 pub struct Home;
 
@@ -26,28 +25,24 @@ impl Render for Home {
         v_flex()
             .size_full()
             .p_8()
-            .gap_4()
+            .gap_2()
+            .items_center()
+            .justify_center()
+            .bg(card_background(cx))
             .child(
                 Label::new(i18n_home(cx, "title"))
-                    .text_xl()
-                    .font_weight(gpui::FontWeight::BOLD),
+                    .text_lg()
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(cx.theme().foreground),
             )
             .child(
                 Label::new(i18n_home(cx, "body"))
-                    .text_color(cx.theme().muted_foreground)
-                    .text_sm(),
-            )
-            .child(
-                h_flex().gap_4().child(
-                    Card::new("home-welcome")
-                        .title(APP_NAME)
-                        .description(i18n_home(cx, "card_body"))
-                        .bg(card_background(cx)),
-                ),
-            )
-            .child(
-                Label::new(now_datetime())
                     .text_sm()
+                    .text_color(cx.theme().muted_foreground),
+            )
+            .child(
+                Label::new(format_unix_secs(Utc::now().timestamp()).unwrap_or_else(now_datetime))
+                    .text_xs()
                     .text_color(cx.theme().muted_foreground),
             )
     }

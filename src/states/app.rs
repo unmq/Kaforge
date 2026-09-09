@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,7 +37,6 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 pub enum Route {
     #[default]
     Home,
-    Todos,
     Settings,
 }
 
@@ -45,7 +44,6 @@ impl Route {
     pub fn as_str(self) -> &'static str {
         match self {
             Route::Home => "home",
-            Route::Todos => "todos",
             Route::Settings => "settings",
         }
     }
@@ -53,7 +51,6 @@ impl Route {
     pub fn from_name(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
             "home" | "" => Some(Route::Home),
-            "todos" => Some(Route::Todos),
             "settings" => Some(Route::Settings),
             _ => None,
         }
@@ -146,7 +143,7 @@ pub struct WindowPlacement {
     pub maximized: bool,
 }
 
-/// Persisted to `gpui-starter.toml`.
+/// Persisted to `kaforge.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppState {
@@ -216,7 +213,7 @@ impl GlobalStore {
 impl Global for GlobalStore {}
 
 fn config_path() -> Result<PathBuf> {
-    let path = get_or_create_config_dir()?.join("gpui-starter.toml");
+    let path = get_or_create_config_dir()?.join("kaforge.toml");
     if !path.exists() {
         std::fs::write(&path, "")?;
     }
@@ -265,10 +262,10 @@ impl AppState {
         let loaded = load_config_with_recovery(&path, |text| toml::from_str::<Self>(text).map_err(|e| e.to_string()))?;
         match &loaded.recovery {
             Some(ConfigRecovery::RestoredFromBackup { corrupt_path, .. }) => {
-                warn!(corrupt = %corrupt_path.display(), "gpui-starter.toml was unreadable; restored from backup")
+                warn!(corrupt = %corrupt_path.display(), "kaforge.toml was unreadable; restored from backup")
             }
             Some(ConfigRecovery::Reset { corrupt_path, .. }) => {
-                error!(corrupt = %corrupt_path.display(), "gpui-starter.toml was unreadable and no backup parsed; reset to defaults")
+                error!(corrupt = %corrupt_path.display(), "kaforge.toml was unreadable and no backup parsed; reset to defaults")
             }
             None => {}
         }

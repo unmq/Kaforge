@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -83,7 +83,7 @@ fn resolve_configured(configured: &str) -> Resolution {
             Ok(proxy) => return Resolution::Explicit(proxy),
             Err(e) => {
                 // The settings input validates, but a hand-edited
-                // gpui-starter.toml can still hold junk — degrade to the system
+                // kaforge.toml can still hold junk — degrade to the system
                 // behavior instead of silently going direct.
                 debug!(%configured, error = %e, "proxy: unusable configured URI, falling back to system");
             }

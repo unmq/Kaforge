@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::states::{GlobalStore, Route, i18n_sidebar, update_app_state_and_save};
+use crate::states::{GlobalStore, i18n_sidebar, update_app_state_and_save};
 use crate::views::open_about_window;
 use gpui::{App, Window, div, prelude::*};
 use gpui_kit::component::{
     ActiveTheme, IconName,
     button::{Button, ButtonVariants},
-    h_flex, v_flex,
+    v_flex,
 };
 
 pub struct Sidebar;
@@ -33,7 +33,6 @@ impl Render for Sidebar {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let store = cx.global::<GlobalStore>().read(cx);
         let collapsed = store.sidebar_collapsed();
-        let route = store.route();
         let width = store.sidebar_px();
 
         v_flex()
@@ -45,28 +44,10 @@ impl Render for Sidebar {
             .border_color(cx.theme().border)
             .bg(cx.theme().sidebar)
             .child(
-                Button::new("nav-home")
+                Button::new("nav-open-connection")
                     .ghost()
-                    .icon(IconName::LayoutDashboard)
-                    .when(!collapsed, |b| b.label(i18n_sidebar(cx, "home")))
-                    .when(route == Route::Home, |b| b.primary())
-                    .on_click(|_, _, cx| {
-                        cx.global::<GlobalStore>()
-                            .clone()
-                            .update(cx, |state, cx| state.go_to(Route::Home, cx));
-                    }),
-            )
-            .child(
-                Button::new("nav-todos")
-                    .ghost()
-                    .icon(IconName::Check)
-                    .when(!collapsed, |b| b.label(i18n_sidebar(cx, "todos")))
-                    .when(route == Route::Todos, |b| b.primary())
-                    .on_click(|_, _, cx| {
-                        cx.global::<GlobalStore>()
-                            .clone()
-                            .update(cx, |state, cx| state.go_to(Route::Todos, cx));
-                    }),
+                    .icon(IconName::Plus)
+                    .when(!collapsed, |b| b.label(i18n_sidebar(cx, "open_connection"))),
             )
             .child(div().flex_1())
             .child(
@@ -84,20 +65,18 @@ impl Render for Sidebar {
                     .on_click(|_, _, cx| open_about_window(cx)),
             )
             .child(
-                h_flex().child(
-                    Button::new("sidebar-collapse")
-                        .ghost()
-                        .icon(if collapsed {
-                            IconName::PanelLeftOpen
-                        } else {
-                            IconName::PanelLeftClose
-                        })
-                        .on_click(move |_, _, cx| {
-                            update_app_state_and_save(cx, "toggle_sidebar", move |state, _| {
-                                state.set_sidebar_collapsed(!collapsed);
-                            });
-                        }),
-                ),
+                Button::new("nav-collapse")
+                    .ghost()
+                    .icon(if collapsed {
+                        IconName::PanelLeftOpen
+                    } else {
+                        IconName::PanelLeftClose
+                    })
+                    .on_click(|_, _, cx| {
+                        update_app_state_and_save(cx, "toggle_sidebar", |state, _| {
+                            state.set_sidebar_collapsed(!state.sidebar_collapsed());
+                        });
+                    }),
             )
     }
 }

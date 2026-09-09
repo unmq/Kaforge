@@ -1,11 +1,11 @@
 [package]
-name = "gpui-starter"
+name = "kaforge"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 categories.workspace = true
-keywords = ["gpui", "gui", "desktop", "template"]
-description = "A native desktop app starter built with Rust and GPUI."
+keywords = ["gpui", "gui", "desktop", "kafka"]
+description = "A native Kafka desktop client built with Rust and GPUI."
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
@@ -26,7 +26,7 @@ build = "build.rs"
 rust-version.workspace = true
 
 [[bin]]
-name = "gpui-starter"
+name = "kaforge"
 path = "src/main.rs"
 
 [workspace]
@@ -35,12 +35,12 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-authors = ["Andy Hsu <i@nn.ci>"]
+authors = ["xhofe <i@nn.ci>"]
 categories = ["gui"]
 license = "Apache-2.0"
-homepage = "https://github.com/xhofe/gpui-starter"
-repository = "https://github.com/xhofe/gpui-starter"
-documentation = "https://github.com/xhofe/gpui-starter"
+homepage = "https://github.com/unmq/Kaforge"
+repository = "https://github.com/unmq/Kaforge"
+documentation = "https://github.com/unmq/Kaforge"
 rust-version = "1.96.0"
 
 [dependencies]
@@ -76,8 +76,7 @@ tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.23", features = ["local-time"] }
 tracing-appender = "0.2.5"
 uuid = { workspace = true }
-gpui-starter-db = { path = "crates/gpui-starter-db" }
-gpui-starter-ui = { path = "crates/gpui-starter-ui" }
+kaforge-ui = { path = "crates/kaforge-ui" }
 snafu = { workspace = true }
 ureq = { version = "3", default-features = false, features = [
     "rustls",
@@ -99,7 +98,6 @@ arc-swap = "1.9.2"
 chrono = "0.4.45"
 directories = "6.0.0"
 home = "0.5.12"
-redb = "4.2.0"
 semver = "1.0.28"
 smol = "2.0.2"
 snafu = "0.9.2"
@@ -169,25 +167,25 @@ default = []
 mimalloc = ["dep:mimalloc"]
 
 [package.metadata.bundle]
-name = "GPUI Starter"
-identifier = "com.example.gpui-starter"
-icon = ["icons/gpui-starter.icns"]
-copyright = "Copyright © 2026 Andy Hsu. All rights reserved."
+name = "Kaforge"
+identifier = "com.example.kaforge"
+icon = ["icons/kaforge.icns"]
+copyright = "Copyright © 2026 xhofe. All rights reserved."
 category = "public.app-category.developer-tools"
 osx_minimum_system_version = "12.0"
-short_description = "A native desktop app starter written in Rust and GPUI."
+short_description = "A native Kafka desktop client written in Rust and GPUI."
 
 [package.metadata.winres]
-OriginalFilename = "gpui-starter.exe"
-LegalCopyright = "Copyright © 2026 Andy Hsu. All rights reserved."
+OriginalFilename = "kaforge.exe"
+LegalCopyright = "Copyright © 2026 xhofe. All rights reserved."
 
 [package.metadata.appimage]
-assets = ["assets/gpui-starter.desktop", "assets/icon.png", "icons/gpui-starter-icon.svg"]
+assets = ["assets/kaforge.desktop", "assets/icon.png", "icons/kaforge-icon.svg"]
 icon = "assets/icon.png"
-desktop_entry = "assets/gpui-starter.desktop"
+desktop_entry = "assets/kaforge.desktop"
 
 [package.metadata.deb]
-name = "gpui-starter"
+name = "kaforge"
 license-file = ["LICENSE", "0"]
 section = "utils"
 priority = "optional"
@@ -195,17 +193,17 @@ depends = "$auto"
 extended-description = """A native, GPU-accelerated desktop app starter built in Rust with GPUI \
 (the Zed editor's UI framework). Clone, run ./scripts/init.sh my-app, and start building."""
 assets = [
-    ["target/release/gpui-starter", "usr/bin/", "755"],
-    ["assets/gpui-starter.desktop", "usr/share/applications/gpui-starter.desktop", "644"],
-    ["assets/icon.png", "usr/share/icons/hicolor/512x512/apps/gpui-starter.png", "644"],
-    ["icons/gpui-starter-icon.svg", "usr/share/icons/hicolor/scalable/apps/gpui-starter.svg", "644"],
+    ["target/release/kaforge", "usr/bin/", "755"],
+    ["assets/kaforge.desktop", "usr/share/applications/kaforge.desktop", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/512x512/apps/kaforge.png", "644"],
+    ["icons/kaforge-icon.svg", "usr/share/icons/hicolor/scalable/apps/kaforge.svg", "644"],
 ]
 
 [package.metadata.generate-rpm]
-name = "gpui-starter"
+name = "kaforge"
 assets = [
-    { source = "target/release/gpui-starter", dest = "/usr/bin/gpui-starter", mode = "755" },
-    { source = "assets/gpui-starter.desktop", dest = "/usr/share/applications/gpui-starter.desktop", mode = "644" },
-    { source = "assets/icon.png", dest = "/usr/share/icons/hicolor/512x512/apps/gpui-starter.png", mode = "644" },
-    { source = "icons/gpui-starter-icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/gpui-starter.svg", mode = "644" },
+    { source = "target/release/kaforge", dest = "/usr/bin/kaforge", mode = "755" },
+    { source = "assets/kaforge.desktop", dest = "/usr/share/applications/kaforge.desktop", mode = "644" },
+    { source = "assets/icon.png", dest = "/usr/share/icons/hicolor/512x512/apps/kaforge.png", mode = "644" },
+    { source = "icons/kaforge-icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/kaforge.svg", mode = "644" },
 ]

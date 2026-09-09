@@ -37,3 +37,5 @@ screenshots/
 # integration topology state (scripts/it/up.sh)
 scripts/it/.run/
 scripts/it/.env
+
+.agents

@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -289,7 +289,7 @@ impl AppRoot {
         let info = os_info::get();
         let store = cx.global::<GlobalStore>().read(cx);
         let summary = format!(
-            "GPUI Starter diagnostics\nversion: {VERSION} ({GIT_SHA})\nos: {}-{}\narch: {}\nconfig_dir: {}\nlocale: {}\ntheme: {:?} / {:?}\napp_store_build: {}\ntime: {}\n",
+            "Kaforge diagnostics\nversion: {VERSION} ({GIT_SHA})\nos: {}-{}\narch: {}\nconfig_dir: {}\nlocale: {}\ntheme: {:?} / {:?}\napp_store_build: {}\ntime: {}\n",
             info.os_type(),
             info.version(),
             info.architecture().unwrap_or_default(),
@@ -524,7 +524,6 @@ impl AppRoot {
     fn tab_title(&self, tab: &ContentTab, cx: &App) -> SharedString {
         match tab.route {
             Route::Home => i18n_sidebar(cx, "home"),
-            Route::Todos => i18n_sidebar(cx, "todos"),
             Route::Settings => i18n_sidebar(cx, "preferences"),
         }
     }

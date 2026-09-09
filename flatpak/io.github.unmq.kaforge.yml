@@ -1,0 +1,41 @@
+# Flathub manifest for Kaforge. See flatpak/README.md for how to (re)generate
+# cargo-sources.json and test a local build before submitting to Flathub.
+app-id: io.github.unmq.kaforge
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  # Flathub builds are network-isolated; the freedesktop SDK has no Rust
+  # toolchain of its own.
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: kaforge
+finish-args:
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=xdg-config/kaforge:create
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/kaforge/cargo
+
+modules:
+  - name: kaforge
+    buildsystem: simple
+    build-commands:
+      - cargo --offline build --release --features mimalloc
+      - install -Dm755 target/release/kaforge /app/bin/kaforge
+      - install -Dm644 flatpak/io.github.unmq.kaforge.desktop /app/share/applications/io.github.unmq.kaforge.desktop
+      - install -Dm644 assets/icon.png /app/share/icons/hicolor/512x512/apps/io.github.unmq.kaforge.png
+      - install -Dm644 icons/kaforge-icon.svg /app/share/icons/hicolor/scalable/apps/io.github.unmq.kaforge.svg
+      - install -Dm644 io.github.unmq.kaforge.metainfo.xml /app/share/metainfo/io.github.unmq.kaforge.metainfo.xml
+    sources:
+      - cargo-sources.json
+      - type: file
+        path: io.github.unmq.kaforge.metainfo.xml
+      - type: git
+        url: https://github.com/unmq/Kaforge.git
+        tag: v0.1.0
+        commit: TODO

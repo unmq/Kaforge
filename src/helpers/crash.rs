@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -161,7 +161,7 @@ mod tests {
 
     impl Scratch {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("gpui-starter-crash-{}-{name}", std::process::id()));
+            let dir = std::env::temp_dir().join(format!("kaforge-crash-{}-{name}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).expect("create scratch dir");
             Self(dir)
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn installed_hook_writes_a_report_for_a_panicking_thread() {
         crate::helpers::override_config_dir(
-            std::env::temp_dir().join(format!("gpui-starter-test-config-{}", std::process::id())),
+            std::env::temp_dir().join(format!("kaforge-test-config-{}", std::process::id())),
         );
         install_panic_hook(context());
         let marker = format!("crash-hook-probe-{}", unix_ts());

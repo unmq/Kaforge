@@ -28,7 +28,7 @@ done
 
 cd "$(dirname "$0")/.."
 
-if pgrep -xq gpui-starter; then
+if pgrep -xq kaforge; then
   echo "error: an instance is already running (single-instance DB lock); quit it first" >&2
   exit 1
 fi
@@ -42,7 +42,7 @@ fi
 
 TARGET_DIR="$(cargo metadata --format-version=1 --no-deps 2>/dev/null \
   | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')"
-BIN="${TARGET_DIR:-target}/$PROFILE/gpui-starter"
+BIN="${TARGET_DIR:-target}/$PROFILE/kaforge"
 if [ ! -x "$BIN" ]; then
   echo "error: built binary not found at $BIN" >&2
   exit 1
@@ -58,7 +58,7 @@ trap cleanup EXIT
 echo "waiting ${WAIT}s for the ${ROUTE} view to render…"
 sleep "$WAIT"
 
-WINDOW_SWIFT="$(mktemp -t gpui-starter-window).swift"
+WINDOW_SWIFT="$(mktemp -t kaforge-window).swift"
 cat > "$WINDOW_SWIFT" <<'EOF'
 import CoreGraphics
 import Foundation

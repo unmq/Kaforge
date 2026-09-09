@@ -60,9 +60,9 @@
 
     <Product
         Id='*'
-        Name='GPUI Starter'
+        Name='Kaforge'
         UpgradeCode='9D2B579F-9F85-4717-ABA3-F82CF881CA99'
-        Manufacturer='Andy Hsu'
+        Manufacturer='xhofe'
         Language='1033'
         Codepage='1252'
         Version='$(var.Version)'>
@@ -70,7 +70,7 @@
         <Package Id='*'
             Keywords='Installer'
             Description='A native desktop app starter built with Rust and GPUI.'
-            Manufacturer='Andy Hsu'
+            Manufacturer='xhofe'
             InstallerVersion='450'
             Languages='1033'
             Compressed='yes'
@@ -83,19 +83,19 @@
             DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.' />
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1' />
-        <Property Id='DiskPrompt' Value='GPUI Starter Installation' />
+        <Property Id='DiskPrompt' Value='Kaforge Installation' />
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
 
             <Directory Id='ProgramMenuFolder'>
                 <Component Id='StartMenuShortcutComp' Guid='*'>
                     <Shortcut Id="ApplicationStartMenuShortcut"
-                        Name="GPUI Starter"
+                        Name="Kaforge"
                         Description="A native desktop app starter built with Rust and GPUI."
                         WorkingDirectory="APPLICATIONFOLDER"
                         Icon="ProductICO"
                         Target="[!exe0]" />
-                    <RegistryValue Root="HKCU" Key="Software\Example\gpui-starter" Name="installed_sm"
+                    <RegistryValue Root="HKCU" Key="Software\Example\kaforge" Name="installed_sm"
                         Type="integer" Value="1" KeyPath="yes" />
                 </Component>
             </Directory>
@@ -103,18 +103,18 @@
             <Directory Id='DesktopFolder'>
                 <Component Id='DesktopShortcutComp' Guid='*'>
                     <Shortcut Id="ApplicationDesktopShortcut"
-                        Name="GPUI Starter"
+                        Name="Kaforge"
                         Description="A native desktop app starter built with Rust and GPUI."
                         WorkingDirectory="APPLICATIONFOLDER"
                         Icon="ProductICO"
                         Target="[!exe0]" />
-                    <RegistryValue Root="HKCU" Key="Software\Example\gpui-starter" Name="installed_dt"
+                    <RegistryValue Root="HKCU" Key="Software\Example\kaforge" Name="installed_dt"
                         Type="integer" Value="1" KeyPath="yes" />
                 </Component>
             </Directory>
 
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
-                <Directory Id='APPLICATIONFOLDER' Name='gpui-starter'>
+                <Directory Id='APPLICATIONFOLDER' Name='kaforge'>
                     <Component Id='License' Guid='*'>
                         <File Id='LicenseFile' DiskId='1' Source='wix\License.rtf' KeyPath='yes' />
                     </Component>
@@ -125,8 +125,8 @@
                     </Component>
 
                     <Component Id='binary0' Guid='*'>
-                        <File Id='exe0' Name='gpui-starter.exe' DiskId='1'
-                            Source='$(var.CargoTargetBinDir)\gpui-starter.exe' KeyPath='yes' />
+                        <File Id='exe0' Name='kaforge.exe' DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\kaforge.exe' KeyPath='yes' />
                     </Component>
                 </Directory>
             </Directory>
@@ -163,10 +163,10 @@
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize' />
 
 
-        <Icon Id='ProductICO' SourceFile='icons\gpui-starter.ico' />
+        <Icon Id='ProductICO' SourceFile='icons\kaforge.ico' />
         <Property Id='ARPPRODUCTICON' Value='ProductICO' />
 
-        <Property Id='ARPHELPLINK' Value='https://github.com/xhofe/gpui-starter' />
+        <Property Id='ARPHELPLINK' Value='https://github.com/unmq/Kaforge' />
 
         <UI>
             <UIRef Id='WixUI_FeatureTree' />

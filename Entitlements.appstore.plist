@@ -7,6 +7,6 @@
     <key>com.apple.security.network.client</key>
     <true/>
     <key>com.apple.application-identifier</key>
-    <string>com.example.gpui-starter</string>
+    <string>com.example.kaforge</string>
 </dict>
 </plist>

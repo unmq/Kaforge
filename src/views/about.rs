@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ use chrono::{Datelike, Local};
 use gpui::{
     App, Bounds, Image, ImageFormat, TitlebarOptions, WindowBounds, WindowKind, WindowOptions, prelude::*, px, size,
 };
-use gpui_starter_ui::{AboutConfig, AboutLine, AboutLink, AboutPage};
+use kaforge_ui::{AboutConfig, AboutLine, AboutLink, AboutPage};
 use std::sync::Arc;
 
 pub fn open_about_window(cx: &mut App) {
@@ -49,7 +49,7 @@ pub fn open_about_window(cx: &mut App) {
                     logo,
                     lines: vec![
                         AboutLine::sm(format!("v{VERSION} ({GIT_SHA})")),
-                        AboutLine::xs(format!("© {year} Andy Hsu")),
+                        AboutLine::xs(format!("© {year} xhofe")),
                     ],
                     links: vec![AboutLink::new("github", "GitHub", repo)],
                     system_info_collector: None,

@@ -1,14 +1,8 @@
-# GPUI Starter
+# Kaforge
 
-A native desktop app starter built in Rust with [GPUI](https://www.gpui.rs/) and [gpui-kit](https://github.com/longbridge/gpui-kit). Clone it, rename it, and start building.
+A native Kafka desktop client built in Rust with [GPUI](https://www.gpui.rs/) and [gpui-kit](https://github.com/longbridge/gpui-kit).
 
-The placeholder identity is **GPUI Starter** (`gpui-starter`). After you clone this repo (or use it as a GitHub Template), run:
-
-```bash
-./scripts/init.sh my-app
-```
-
-That rewrites crate names, bundle ids, CI, locales, and docs from `origin` + your git user. Preferences persist to `my-app.toml`; the todos demo uses a local redb file.
+Preferences persist to `kaforge.toml`. Saved cluster credentials live in `connections.toml`.
 
 ## Run
 
@@ -26,17 +20,15 @@ make fmt && make lint
 ## Layout
 
 ```
-src/                      # bin crate `gpui-starter`
+src/                      # bin crate `kaforge`
   main.rs, root.rs, …
   states/app.rs           # prefs: theme / locale / fonts / proxy / update / tray / datetime / window
-  views/{home,todos,settings,about,title_bar,sidebar,…}
-crates/gpui-starter-ui/   # Card, Dialog, Form, Select, TextTable, …
-crates/gpui-starter-db/   # redb `todos` table
+  views/{home,settings,about,title_bar,sidebar,…}
+crates/kaforge-ui/        # Card, Dialog, Form, Select, TextTable, …
 locales/{en,zh}.toml
-scripts/init.sh
 ```
 
-Sidebar routes: **Home** | **Todos** | **Settings**. About, updates, the command palette, and keyboard shortcuts live on the title bar / palette. Workspace tabs are independent shells; todos and prefs are global.
+The sidebar lists currently open Kafka connections. Saved clusters are picked from the Open connection dialog. Settings, About, updates, the command palette, and keyboard shortcuts live on the title bar / palette.
 
 ## Release
 

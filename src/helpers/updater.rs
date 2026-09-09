@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ fn github_slug() -> &'static str {
             .trim_end_matches(".git")
             .rsplit_once("github.com/")
             .map(|(_, rest)| rest.to_string())
-            .unwrap_or_else(|| "xhofe/gpui-starter".to_string())
+            .unwrap_or_else(|| "unmq/Kaforge".to_string())
     })
 }
 
@@ -178,7 +178,7 @@ struct GithubAsset {
 }
 
 /// The API's asset list in the manifest's shape, read off the file names
-/// publish.yml uses (`gpui-starter-<os>-<arch>.<kind>`): what a release without
+/// publish.yml uses (`kaforge-<os>-<arch>.<kind>`): what a release without
 /// a `latest.json` (the nightly) can still offer to install. No checksum
 /// travels with it, so the download is not verified — the page link stays
 /// beside it.
@@ -530,10 +530,10 @@ pub fn download_and_verify(asset: &UpdateAsset, mut on_progress: impl FnMut(u64,
 /// Whether finishing the install needs this app to quit — the answer differs per
 /// platform because "installing" means something different on each:
 ///
-/// * **macOS** (`.dmg`): the user drags the new `GPUI Starter.app` over the running one
+/// * **macOS** (`.dmg`): the user drags the new `Kaforge.app` over the running one
 ///   in `/Applications`. The live process has the old bundle's pages mapped, so
 ///   replacing it underneath can fault it (bad code signature / `SIGBUS`).
-/// * **Windows** (`.msi`): msiexec cannot replace a running `gpui-starter.exe`; it
+/// * **Windows** (`.msi`): msiexec cannot replace a running `kaforge.exe`; it
 ///   raises the "files in use" prompt (or demands a reboot) instead.
 /// * **Linux** (AppImage / tarball): not an installer at all — nothing needs the
 ///   process gone, and quitting would strand the user with no new version.
@@ -681,9 +681,9 @@ const BUNDLE_ID: &str = crate::constants::BUNDLE_ID;
 
 /// The bundle's name, on the DMG and on disk.
 #[cfg(target_os = "macos")]
-const BUNDLE_NAME: &str = "GPUI Starter.app";
+const BUNDLE_NAME: &str = "Kaforge.app";
 
-/// The bundle this process runs from — `…/GPUI Starter.app` for the installed
+/// The bundle this process runs from — `…/Kaforge.app` for the installed
 /// app, `None` under bare `cargo run`. `current_exe` reports the path
 /// recorded at exec time, so after an in-place install it names the *new*
 /// copy at the same location — exactly what a relaunch wants, and why
@@ -729,7 +729,7 @@ fn replace_bundle(target: &Path, volume: &Path) -> Result<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let aside = std::env::temp_dir().join(format!("gpui-starter-previous-{}-{stamp}.app", std::process::id()));
+    let aside = std::env::temp_dir().join(format!("kaforge-previous-{}-{stamp}.app", std::process::id()));
     std::fs::rename(target, &aside).map_err(|e| Error::Invalid {
         message: format!("could not move the old bundle aside: {e}"),
     })?;
@@ -777,7 +777,7 @@ fn attach(dmg: &Path) -> Result<PathBuf> {
 
 /// The `mount-point` string out of `hdiutil attach -plist` — the one
 /// value needed, scanned without a plist parser. The volume name is ours
-/// and ASCII ("GPUI Starter Installer"), so XML entity escapes cannot occur in
+/// and ASCII ("Kaforge Installer"), so XML entity escapes cannot occur in
 /// the value.
 #[cfg(target_os = "macos")]
 fn mount_point_from_plist(xml: &str) -> Option<PathBuf> {
@@ -903,12 +903,12 @@ mod tests {
     <key>content-hint</key><string>Apple_HFS</string>
     <key>dev-entry</key><string>/dev/disk5s1</string>
     <key>mount-point</key>
-    <string>/Volumes/GPUI Starter Installer</string>
+    <string>/Volumes/Kaforge Installer</string>
   </dict>
 </array></dict></plist>"#;
         assert_eq!(
             mount_point_from_plist(xml),
-            Some(PathBuf::from("/Volumes/GPUI Starter Installer"))
+            Some(PathBuf::from("/Volumes/Kaforge Installer"))
         );
         assert_eq!(mount_point_from_plist("<plist></plist>"), None);
     }
@@ -917,23 +917,20 @@ mod tests {
     #[test]
     fn bundle_root_is_the_app_directory_or_nothing() {
         assert_eq!(
-            bundle_root_of(Path::new("/Applications/GPUI Starter.app/Contents/MacOS/gpui-starter")),
-            Some(PathBuf::from("/Applications/GPUI Starter.app"))
+            bundle_root_of(Path::new("/Applications/Kaforge.app/Contents/MacOS/kaforge")),
+            Some(PathBuf::from("/Applications/Kaforge.app"))
         );
         // Bare `cargo run` has no bundle to replace.
-        assert_eq!(
-            bundle_root_of(Path::new("/Users/x/proj/target/debug/gpui-starter")),
-            None
-        );
+        assert_eq!(bundle_root_of(Path::new("/Users/x/proj/target/debug/kaforge")), None);
     }
 
-    /// Build a DMG whose payload is `GPUI Starter.app` carrying `id` as its
+    /// Build a DMG whose payload is `Kaforge.app` carrying `id` as its
     /// bundle identifier, under `dir`. Real hdiutil, ~a second.
     #[cfg(target_os = "macos")]
     fn fixture_dmg(dir: &Path, id: &str, marker: &[u8], volname: &str) -> PathBuf {
         let contents = dir.join("payload").join(BUNDLE_NAME).join("Contents");
         std::fs::create_dir_all(contents.join("MacOS")).expect("mkdir");
-        std::fs::write(contents.join("MacOS/gpui-starter"), marker).expect("write binary");
+        std::fs::write(contents.join("MacOS/kaforge"), marker).expect("write binary");
         std::fs::write(
             contents.join("Info.plist"),
             format!(
@@ -963,7 +960,7 @@ mod tests {
     fn fixture_target(dir: &Path) -> PathBuf {
         let target = dir.join("Applications").join(BUNDLE_NAME);
         std::fs::create_dir_all(target.join("Contents/MacOS")).expect("mkdir target");
-        std::fs::write(target.join("Contents/MacOS/gpui-starter"), b"old build").expect("write old");
+        std::fs::write(target.join("Contents/MacOS/kaforge"), b"old build").expect("write old");
         target
     }
 
@@ -973,17 +970,17 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn in_place_install_swaps_the_bundle_and_detaches() {
-        let dir = std::env::temp_dir().join(format!("gpui-starter-inplace-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kaforge-inplace-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let volname = "gpui-starter-inplace-test";
+        let volname = "kaforge-inplace-test";
         let dmg = fixture_dmg(&dir, BUNDLE_ID, b"new build", volname);
         let target = fixture_target(&dir);
 
         install_over(&target, &dmg).expect("in-place install");
 
         assert_eq!(
-            std::fs::read(target.join("Contents/MacOS/gpui-starter")).expect("read new"),
+            std::fs::read(target.join("Contents/MacOS/kaforge")).expect("read new"),
             b"new build"
         );
         assert!(
@@ -992,7 +989,7 @@ mod tests {
         );
         // The old bundle was parked in temp, not destroyed — the running
         // process may still fault pages in from it.
-        let prefix = format!("gpui-starter-previous-{}-", std::process::id());
+        let prefix = format!("kaforge-previous-{}-", std::process::id());
         let parked: Vec<PathBuf> = std::fs::read_dir(std::env::temp_dir())
             .into_iter()
             .flatten()
@@ -1007,7 +1004,7 @@ mod tests {
         assert!(
             parked
                 .iter()
-                .any(|p| std::fs::read(p.join("Contents/MacOS/gpui-starter")).is_ok_and(|bytes| bytes == b"old build")),
+                .any(|p| std::fs::read(p.join("Contents/MacOS/kaforge")).is_ok_and(|bytes| bytes == b"old build")),
             "the old bundle must survive in temp"
         );
         for p in parked {
@@ -1021,10 +1018,10 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn a_foreign_bundle_is_refused_before_anything_moves() {
-        let dir = std::env::temp_dir().join(format!("gpui-starter-foreign-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("kaforge-foreign-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir");
-        let volname = "gpui-starter-foreign-test";
+        let volname = "kaforge-foreign-test";
         let dmg = fixture_dmg(&dir, "com.example.stranger", b"impostor", volname);
         let target = fixture_target(&dir);
 
@@ -1032,7 +1029,7 @@ mod tests {
 
         assert!(refused.is_err(), "a foreign identifier must be refused");
         assert_eq!(
-            std::fs::read(target.join("Contents/MacOS/gpui-starter")).expect("read old"),
+            std::fs::read(target.join("Contents/MacOS/kaforge")).expect("read old"),
             b"old build",
             "the standing install must be untouched"
         );
@@ -1059,13 +1056,13 @@ mod tests {
     fn api_assets_are_read_off_the_release_file_names() {
         let assets = vec![
             GithubAsset {
-                name: "gpui-starter-macos-aarch64.dmg".into(),
-                browser_download_url: "https://x/gpui-starter-macos-aarch64.dmg".into(),
+                name: "kaforge-macos-aarch64.dmg".into(),
+                browser_download_url: "https://x/kaforge-macos-aarch64.dmg".into(),
                 size: 10,
             },
             GithubAsset {
-                name: "gpui-starter-windows-x86_64.msi".into(),
-                browser_download_url: "https://x/gpui-starter-windows-x86_64.msi".into(),
+                name: "kaforge-windows-x86_64.msi".into(),
+                browser_download_url: "https://x/kaforge-windows-x86_64.msi".into(),
                 size: 20,
             },
             GithubAsset {

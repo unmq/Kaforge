@@ -1,12 +1,12 @@
 [Desktop Entry]
-Name=GPUI Starter
+Name=Kaforge
 Comment=A native desktop app starter written in Rust and GPUI
-Exec=gpui-starter
-Icon=io.github.xhofe.gpui-starter
+Exec=kaforge
+Icon=io.github.unmq.kaforge
 Type=Application
 Terminal=false
 Categories=Development;Utility;
-# Flatpak sets FLATPAK_ID=io.github.xhofe.gpui-starter; the binary uses that as
+# Flatpak sets FLATPAK_ID=io.github.unmq.kaforge; the binary uses that as
 # the Wayland app_id so this desktop entry is matched for name + icon.
-StartupWMClass=io.github.xhofe.gpui-starter
+StartupWMClass=io.github.unmq.kaforge
 StartupNotify=true

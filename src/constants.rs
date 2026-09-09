@@ -1,4 +1,4 @@
-// Copyright 2026 Andy Hsu.
+// Copyright 2026 xhofe.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,13 +15,13 @@
 use gpui::{Pixels, px};
 
 /// User-facing application name (window title, menus, About).
-pub const APP_NAME: &str = "GPUI Starter";
+pub const APP_NAME: &str = "Kaforge";
 
 /// Freedesktop / Wayland `app_id` for AppImage and tarball installs.
-pub const APP_ID: &str = "gpui-starter";
+pub const APP_ID: &str = "kaforge";
 
 /// Bundle identifier — keep in lockstep with `[package.metadata.bundle]`.
-pub const BUNDLE_ID: &str = "com.example.gpui-starter";
+pub const BUNDLE_ID: &str = "com.example.kaforge";
 
 pub fn linux_app_id() -> String {
     std::env::var("FLATPAK_ID")

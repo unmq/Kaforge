@@ -20,9 +20,9 @@ set -e
 VERSION=${1:?usage: submit-winget.sh <version> [new|update]}
 VERSION=${VERSION#v}
 MODE=${2:-update}
-ID=xhofe.GpuiStarter
-BASE="https://github.com/xhofe/gpui-starter/releases/download/v$VERSION"
-URLS=("$BASE/gpui-starter-windows-x86_64.msi" "$BASE/gpui-starter-windows-aarch64.msi")
+ID=xhofe.Kaforge
+BASE="https://github.com/unmq/Kaforge/releases/download/v$VERSION"
+URLS=("$BASE/kaforge-windows-x86_64.msi" "$BASE/kaforge-windows-aarch64.msi")
 
 command -v komac >/dev/null || { echo "komac not found — brew install komac" >&2; exit 1; }
 

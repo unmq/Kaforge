@@ -69,7 +69,7 @@ impl DocKind {
         })
     }
 
-    pub fn all_nav() -> [Self; 6] {
+    pub fn all_nav() -> [Self; 8] {
         [
             Self::Topics,
             Self::Nodes,
@@ -77,7 +77,23 @@ impl DocKind {
             Self::Acl,
             Self::Sr,
             Self::Monitor,
+            Self::Producer,
+            Self::Consumer,
         ]
+    }
+
+    pub fn icon(self) -> gpui_kit::component::IconName {
+        use gpui_kit::component::IconName;
+        match self {
+            Self::Topics => IconName::FileText,
+            Self::Nodes => IconName::HardDrive,
+            Self::Groups => IconName::User,
+            Self::Acl => IconName::Asterisk,
+            Self::Sr => IconName::BookOpen,
+            Self::Monitor => IconName::ChartPie,
+            Self::Producer => IconName::ArrowUp,
+            Self::Consumer => IconName::Inbox,
+        }
     }
 }
 
@@ -101,6 +117,7 @@ pub struct DocPane {
     from_beginning: bool,
     commit: bool,
     lag_points: Vec<LagPoint>,
+    load_gen: u64,
 }
 
 impl DocPane {
@@ -114,7 +131,13 @@ impl DocPane {
         let cols = columns_for(kind, cx);
         let table = cx.new(|cx| TableState::new(TextTable::new(cols, i18n_common(cx, "copied")), window, cx));
         let topic = cx.new(|cx| InputState::new(window, cx).placeholder(i18n_kafka(cx, "topic_placeholder")));
-        let extra = cx.new(|cx| InputState::new(window, cx).placeholder(i18n_kafka(cx, "extra_placeholder")));
+        let extra = cx.new(|cx| {
+            let placeholder = match kind {
+                DocKind::Groups => i18n_kafka(cx, "group_placeholder"),
+                _ => i18n_kafka(cx, "extra_placeholder"),
+            };
+            InputState::new(window, cx).placeholder(placeholder)
+        });
         let body = cx.new(|cx| TextareaState::new(window, cx));
         if let Some(topic_name) = payload.as_deref() {
             topic.update(cx, |input, cx| input.set_value(topic_name, window, cx));
@@ -133,8 +156,13 @@ impl DocPane {
             from_beginning: false,
             commit: false,
             lag_points: Vec::new(),
+            load_gen: 0,
         };
-        pane.refresh(window, cx);
+        if pane.handle.is_some() {
+            pane.refresh(window, cx);
+        } else {
+            pane.status = i18n_kafka(cx, "not_connected");
+        }
         pane
     }
 
@@ -144,15 +172,29 @@ impl DocPane {
         self.refresh_from_cx(cx);
     }
 
+    pub fn set_error(&mut self, err: impl Into<SharedString>, cx: &mut Context<Self>) {
+        self.status = err.into();
+        cx.notify();
+    }
+
     fn refresh_from_cx(&mut self, cx: &mut Context<Self>) {
-        let handle = self.handle.clone();
+        let Some(handle) = self.handle.clone() else {
+            self.status = i18n_kafka(cx, "not_connected");
+            cx.notify();
+            return;
+        };
         let kind = self.kind;
         let payload = self.payload.clone();
+        self.load_gen = self.load_gen.saturating_add(1);
+        let ticket = self.load_gen;
         self.status = i18n_kafka(cx, "loading");
         cx.notify();
         cx.spawn(async move |this, cx| {
-            let result = smol::unblock(move || load_rows(kind, payload.as_deref(), handle.as_ref())).await;
+            let result = smol::unblock(move || load_rows(kind, payload.as_deref(), &handle)).await;
             this.update(cx, |this, cx| {
+                if this.load_gen != ticket {
+                    return;
+                }
                 match result {
                     Ok(rows) => {
                         if kind == DocKind::Monitor {
@@ -797,8 +839,8 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
             .into_any_element(),
         DocKind::Groups => h_flex()
             .gap_2()
+            .child(Input::new(&pane.extra).h(px(32.)).w(px(180.)))
             .child(Input::new(&pane.topic).h(px(32.)).w(px(180.)))
-            .child(Input::new(&pane.extra).h(px(32.)).w(px(160.)))
             .child(
                 Button::new("refresh")
                     .label(i18n_kafka(cx, "refresh"))
@@ -837,19 +879,30 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                     .on_click(cx.listener(|this, _, _, cx| this.set_sr_compat(cx))),
             )
             .into_any_element(),
-        DocKind::Nodes | DocKind::Acl | DocKind::Monitor => h_flex()
+        DocKind::Nodes => h_flex()
             .gap_2()
-            .child(Input::new(&pane.topic).h(px(32.)).w(px(160.)))
-            .child(Input::new(&pane.extra).h(px(32.)).w(px(180.)))
             .child(
                 Button::new("refresh")
                     .label(i18n_kafka(cx, "refresh"))
                     .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
             )
+            .into_any_element(),
+        DocKind::Monitor => h_flex()
+            .gap_2()
             .child(
-                Button::new("alter")
-                    .label(i18n_kafka(cx, "save_plan"))
-                    .on_click(cx.listener(|this, _, _, cx| this.alter_named_config(cx))),
+                Button::new("refresh")
+                    .label(i18n_kafka(cx, "refresh"))
+                    .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
+            )
+            .into_any_element(),
+        DocKind::Acl => h_flex()
+            .gap_2()
+            .child(Input::new(&pane.extra).h(px(32.)).w(px(160.)))
+            .child(Input::new(&pane.topic).h(px(32.)).w(px(160.)))
+            .child(
+                Button::new("refresh")
+                    .label(i18n_kafka(cx, "refresh"))
+                    .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
             )
             .child(
                 Button::new("acl-add")
@@ -920,11 +973,8 @@ fn columns_for(kind: DocKind, cx: &App) -> Vec<TextColumn> {
 fn load_rows(
     kind: DocKind,
     _payload: Option<&str>,
-    handle: Option<&ConnectionHandle>,
+    handle: &ConnectionHandle,
 ) -> std::result::Result<Vec<Vec<SharedString>>, String> {
-    let Some(handle) = handle else {
-        return Ok(Vec::new());
-    };
     match kind {
         DocKind::Topics => Ok(handle
             .list_topics()

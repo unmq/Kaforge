@@ -13,7 +13,9 @@
 // limitations under the License.
 
 use crate::connections;
-use crate::states::{GlobalStore, PersistedSession, PersistedTab, update_app_state_and_save_quiet};
+use crate::states::{
+    GlobalStore, NotificationAction, PersistedSession, PersistedTab, notify, update_app_state_and_save_quiet,
+};
 use crate::views::docs::{DocKind, DocPane};
 use gpui::{App, Entity, Window, prelude::*};
 use kaforge_kafka::{ConnectionConfig, ConnectionHandle, prepare_config};
@@ -333,8 +335,13 @@ impl Workspace {
                         session.handle = Some(handle);
                     }
                     Err(e) => {
+                        let msg = e.to_string();
                         session.status = SessionStatus::Idle;
-                        session.error = Some(e.to_string());
+                        session.error = Some(msg.clone());
+                        for tab in &session.tabs {
+                            tab.pane.update(cx, |pane, cx| pane.set_error(msg.clone(), cx));
+                        }
+                        notify(cx, NotificationAction::new_error(msg.into()));
                     }
                 }
                 cx.notify();

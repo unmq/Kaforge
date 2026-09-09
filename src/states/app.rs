@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::constants::{SIDEBAR_COLLAPSED_WIDTH, SIDEBAR_WIDTH};
 use crate::error::Error;
 use crate::helpers::{
     ConfigRecovery, TimeZonePref, UpdateInfo, get_or_create_config_dir, load_config_with_recovery, unix_ts,
@@ -425,14 +424,6 @@ impl AppState {
 
     pub fn set_sidebar_collapsed(&mut self, collapsed: bool) {
         self.sidebar_collapsed = Some(collapsed);
-    }
-
-    pub fn sidebar_px(&self) -> Pixels {
-        if self.sidebar_collapsed() {
-            SIDEBAR_COLLAPSED_WIDTH
-        } else {
-            SIDEBAR_WIDTH
-        }
     }
 
     pub fn bounds(&self) -> Option<&Bounds<Pixels>> {

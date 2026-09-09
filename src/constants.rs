@@ -30,6 +30,4 @@ pub fn linux_app_id() -> String {
         .unwrap_or_else(|| APP_ID.to_string())
 }
 
-pub const SIDEBAR_WIDTH: Pixels = px(180.0);
-pub const SIDEBAR_COLLAPSED_WIDTH: Pixels = px(52.0);
 pub const WORKSPACE_TAB_BAR_HEIGHT: Pixels = px(30.0);

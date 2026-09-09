@@ -27,7 +27,7 @@ use gpui_kit::component::{
 use kaforge_kafka::{
     AclEntry, ConnectionHandle, ConsumeRequest, ConsumedRecord, ProduceRecord, StreamEvent, StreamSession,
 };
-use kaforge_ui::{TextColumn, TextTable};
+use kaforge_ui::{Combobox, TextColumn, TextTable};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DocKind {
@@ -110,6 +110,7 @@ pub struct DocPane {
     status: SharedString,
     table: Entity<TableState<TextTable>>,
     topic: Entity<InputState>,
+    topic_combo: Entity<Combobox>,
     extra: Entity<InputState>,
     body: Entity<TextareaState>,
     stream: Option<StreamSession>,
@@ -131,6 +132,7 @@ impl DocPane {
         let cols = columns_for(kind, cx);
         let table = cx.new(|cx| TableState::new(TextTable::new(cols, i18n_common(cx, "copied")), window, cx));
         let topic = cx.new(|cx| InputState::new(window, cx).placeholder(i18n_kafka(cx, "topic_placeholder")));
+        let topic_combo = cx.new(|cx| Combobox::new(Vec::new(), None, window, cx));
         let extra = cx.new(|cx| {
             let placeholder = match kind {
                 DocKind::Groups => i18n_kafka(cx, "group_placeholder"),
@@ -149,6 +151,7 @@ impl DocPane {
             status: SharedString::default(),
             table,
             topic,
+            topic_combo,
             extra,
             body,
             stream: None,
@@ -189,6 +192,25 @@ impl DocPane {
         let ticket = self.load_gen;
         self.status = i18n_kafka(cx, "loading");
         cx.notify();
+        let handle_topics = handle.clone();
+        let prefer = payload.clone();
+        cx.spawn(async move |this, cx| {
+            let names = smol::unblock(move || {
+                handle_topics
+                    .list_topics()
+                    .map(|topics| topics.into_iter().map(|t| t.name).collect::<Vec<_>>())
+            })
+            .await;
+            if let Ok(names) = names {
+                this.update_in(cx, |this, window, cx| {
+                    this.topic_combo.update(cx, |combo, cx| {
+                        combo.set_items(names, prefer.as_deref(), window, cx);
+                    });
+                })
+                .ok();
+            }
+        })
+        .detach();
         cx.spawn(async move |this, cx| {
             let result = smol::unblock(move || load_rows(kind, payload.as_deref(), &handle)).await;
             this.update(cx, |this, cx| {
@@ -249,13 +271,21 @@ impl DocPane {
         self.refresh_from_cx(cx);
     }
 
+    fn topic_name(&self, cx: &App) -> String {
+        if matches!(self.kind, DocKind::Consumer | DocKind::Producer) {
+            self.topic_combo.read(cx).selected_value(cx).unwrap_or_default()
+        } else {
+            self.topic.read(cx).value().to_string()
+        }
+    }
+
     fn produce(&mut self, cx: &mut Context<Self>) {
         let Some(handle) = self.handle.clone() else {
             self.status = i18n_kafka(cx, "not_connected");
             cx.notify();
             return;
         };
-        let topic = self.topic.read(cx).value().to_string();
+        let topic = self.topic_name(cx);
         let key = self.extra.read(cx).value().to_string();
         let value = self.body.read(cx).value().to_string();
         self.status = i18n_kafka(cx, "sending");
@@ -289,7 +319,7 @@ impl DocPane {
             cx.notify();
             return;
         };
-        let topic = self.topic.read(cx).value().to_string();
+        let topic = self.topic_name(cx);
         let group = self.extra.read(cx).value().to_string();
         let from_beginning = self.from_beginning;
         let commit = self.commit;
@@ -325,7 +355,7 @@ impl DocPane {
         let Some(handle) = self.handle.clone() else {
             return;
         };
-        let topic = self.topic.read(cx).value().to_string();
+        let topic = self.topic_name(cx);
         let group = self.extra.read(cx).value().to_string();
         match handle.start_stream(ConsumeRequest {
             topic,
@@ -513,7 +543,7 @@ impl DocPane {
             return;
         };
         let group = self.extra.read(cx).value().to_string();
-        let topic = self.topic.read(cx).value().to_string();
+        let topic = self.topic_name(cx);
         let to_beginning = self.from_beginning;
         cx.spawn(async move |this, cx| {
             let result = smol::unblock(move || handle.reset_offsets(&group, &topic, to_beginning)).await;
@@ -564,6 +594,26 @@ impl DocPane {
             ));
         }
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(csv));
+        self.status = i18n_common(cx, "copied");
+        cx.notify();
+    }
+
+    fn export_json(&mut self, cx: &mut Context<Self>) {
+        let rows: Vec<serde_json::Value> = self
+            .consume_rows
+            .iter()
+            .map(|rec| {
+                serde_json::json!({
+                    "topic": rec.topic,
+                    "partition": rec.partition,
+                    "offset": rec.offset,
+                    "key": rec.key,
+                    "value": rec.value,
+                })
+            })
+            .collect();
+        let text = serde_json::to_string_pretty(&rows).unwrap_or_else(|_| "[]".into());
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
         self.status = i18n_common(cx, "copied");
         cx.notify();
     }
@@ -780,7 +830,7 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
             .into_any_element(),
         DocKind::Producer => h_flex()
             .gap_2()
-            .child(Input::new(&pane.topic).h(px(32.)).w(px(180.)))
+            .child(div().h(px(32.)).w(px(220.)).child(pane.topic_combo.clone()))
             .child(Input::new(&pane.extra).h(px(32.)).w(px(140.)))
             .child(Textarea::new(&pane.body).h(px(32.)).w(px(280.)))
             .child(
@@ -792,7 +842,7 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
             .into_any_element(),
         DocKind::Consumer => h_flex()
             .gap_2()
-            .child(Input::new(&pane.topic).h(px(32.)).w(px(180.)))
+            .child(div().h(px(32.)).w(px(220.)).child(pane.topic_combo.clone()))
             .child(Input::new(&pane.extra).h(px(32.)).w(px(140.)))
             .child(
                 Button::new("poll")
@@ -805,6 +855,17 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                     .label(i18n_kafka(cx, "stream"))
                     .on_click(cx.listener(|this, _, _, cx| this.start_stream(cx))),
             )
+            .when(pane.stream.is_some(), |this| {
+                this.child(
+                    Button::new("stop-stream")
+                        .danger()
+                        .label(i18n_kafka(cx, "stop_stream"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.stream = None;
+                            cx.notify();
+                        })),
+                )
+            })
             .child(
                 Button::new("from-beg")
                     .label(i18n_kafka(cx, "from_beginning"))
@@ -830,6 +891,11 @@ fn toolbar(pane: &DocPane, cx: &mut Context<DocPane>) -> impl IntoElement {
                 Button::new("export")
                     .label(i18n_kafka(cx, "export_csv"))
                     .on_click(cx.listener(|this, _, _, cx| this.export_csv(cx))),
+            )
+            .child(
+                Button::new("export-json")
+                    .label(i18n_kafka(cx, "export_json"))
+                    .on_click(cx.listener(|this, _, _, cx| this.export_json(cx))),
             )
             .child(
                 Button::new("replay")

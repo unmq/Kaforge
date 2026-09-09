@@ -14,6 +14,7 @@
 
 mod about;
 mod card;
+mod combobox;
 mod dialog;
 mod divider;
 mod form;
@@ -25,6 +26,7 @@ mod text_table;
 
 pub use about::*;
 pub use card::*;
+pub use combobox::*;
 pub use dialog::*;
 pub use divider::*;
 pub use form::*;

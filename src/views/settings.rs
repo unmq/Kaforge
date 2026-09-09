@@ -26,7 +26,7 @@ use gpui::{
     App, Bounds, Entity, Subscription, TitlebarOptions, Window, WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
 use gpui_kit::component::{
-    ActiveTheme, Theme, ThemeMode, ThemeRegistry,
+    Theme, ThemeMode, ThemeRegistry,
     button::Button,
     h_flex,
     input::{Input, InputEvent, InputState},
@@ -36,7 +36,7 @@ use gpui_kit::component::{
     switch::Switch,
     v_flex,
 };
-use kaforge_ui::{Select, SelectEvent};
+use kaforge_ui::{Combobox, ComboboxEvent, Select, SelectEvent};
 
 pub fn open_settings_window(cx: &mut App) {
     let bounds = Bounds::centered(active_window_display(cx), size(px(640.), px(720.)), cx);
@@ -59,6 +59,7 @@ struct Settings {
     locale: Entity<Select>,
     time_zone: Entity<Select>,
     date_format: Entity<Select>,
+    theme: Entity<Combobox>,
     proxy: Entity<InputState>,
     font_slider: Entity<SliderState>,
     _subs: Vec<Subscription>,
@@ -66,12 +67,26 @@ struct Settings {
 
 impl Settings {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (locale_idx, tz_idx, date_format_id, proxy_value, font_px) = {
+        let (locale_idx, tz_idx, date_format_id, proxy_value, font_px, theme_idx, theme_names) = {
             let store = cx.global::<GlobalStore>().read(cx);
             let locale_idx = if store.locale() == "zh" { 1 } else { 0 };
             let tz_idx = match store.time_zone() {
                 TimeZonePref::Local => 0,
                 TimeZonePref::Utc => 1,
+            };
+            let theme_names: Vec<String> = ThemeRegistry::global(cx)
+                .themes()
+                .keys()
+                .map(|s| s.to_string())
+                .collect();
+            let theme_idx = if let Some(name) = store.theme_name() {
+                theme_names.iter().position(|n| n == &name).map(|i| i + 3).unwrap_or(2)
+            } else {
+                match store.theme() {
+                    Some(ThemeMode::Light) => 0,
+                    Some(ThemeMode::Dark) => 1,
+                    _ => 2,
+                }
             };
             (
                 locale_idx,
@@ -79,8 +94,17 @@ impl Settings {
                 store.date_format(),
                 store.http_proxy(),
                 store.font_rem_px().unwrap_or(14.0),
+                theme_idx,
+                theme_names,
             )
         };
+        let mut theme_labels = vec![
+            i18n_settings(cx, "theme_light").to_string(),
+            i18n_settings(cx, "theme_dark").to_string(),
+            i18n_settings(cx, "theme_system").to_string(),
+        ];
+        theme_labels.extend(theme_names.iter().cloned());
+        let theme = cx.new(|cx| Combobox::new(theme_labels, Some(theme_idx), window, cx));
         let locale = cx.new(|cx| Select::new(vec!["English".into(), "中文".into()], Some(locale_idx), window, cx));
         let tz_labels: Vec<String> = TimeZonePref::ALL.iter().map(|zone| zone.label().to_string()).collect();
         let time_zone = cx.new(|cx| Select::new(tz_labels, Some(tz_idx), window, cx));
@@ -101,6 +125,34 @@ impl Settings {
         });
 
         let mut subs = Vec::new();
+        subs.push(cx.subscribe_in(&theme, window, {
+            let theme_names = theme_names.clone();
+            move |_, _, event: &ComboboxEvent, window, cx| {
+                let ComboboxEvent::Change(i) = event;
+                match *i {
+                    0 => set_mode(cx, ThemeMode::Light),
+                    1 => set_mode(cx, ThemeMode::Dark),
+                    2 => {
+                        restore_default_themes(cx);
+                        Theme::change(
+                            crate::window_setup::theme_mode_for_appearance(window.appearance()),
+                            None,
+                            cx,
+                        );
+                        update_app_state_and_save(cx, "save_theme", |state, _| state.set_theme_system());
+                    }
+                    n => {
+                        if let Some(name) = theme_names.get(n.saturating_sub(3)).cloned()
+                            && apply_named_theme(&name, cx)
+                        {
+                            update_app_state_and_save(cx, "save_theme_name", move |state, _| {
+                                state.set_theme_name(name.clone());
+                            });
+                        }
+                    }
+                }
+            }
+        }));
         subs.push(cx.subscribe(&locale, |_, _, event: &SelectEvent, cx| {
             let SelectEvent::Change(i) = event;
             let locale = if *i == 1 { "zh" } else { "en" };
@@ -151,6 +203,7 @@ impl Settings {
             locale,
             time_zone,
             date_format,
+            theme,
             proxy,
             font_slider,
             _subs: subs,
@@ -177,11 +230,6 @@ impl Render for Settings {
         let tray = store.tray_enabled();
         let auto_update = store.auto_update_check();
         let prerelease = store.include_prerelease();
-        let theme_names: Vec<String> = ThemeRegistry::global(cx)
-            .themes()
-            .keys()
-            .map(|s| s.to_string())
-            .collect();
 
         v_flex()
             .size_full()
@@ -189,63 +237,8 @@ impl Render for Settings {
             .gap_4()
             .overflow_y_scrollbar()
             .child(Label::new(i18n_settings(cx, "section_appearance")).font_weight(gpui::FontWeight::BOLD))
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        Button::new("theme-light")
-                            .label(i18n_settings(cx, "theme_light"))
-                            .on_click(|_, _, cx| {
-                                set_mode(cx, ThemeMode::Light);
-                            }),
-                    )
-                    .child(
-                        Button::new("theme-dark")
-                            .label(i18n_settings(cx, "theme_dark"))
-                            .on_click(|_, _, cx| {
-                                set_mode(cx, ThemeMode::Dark);
-                            }),
-                    )
-                    .child(
-                        Button::new("theme-system")
-                            .label(i18n_settings(cx, "theme_system"))
-                            .on_click(|_, window, cx| {
-                                restore_default_themes(cx);
-                                Theme::change(
-                                    crate::window_setup::theme_mode_for_appearance(window.appearance()),
-                                    None,
-                                    cx,
-                                );
-                                update_app_state_and_save(cx, "save_theme", |state, _| state.set_theme_system());
-                            }),
-                    ),
-            )
-            .when(!theme_names.is_empty(), |this| {
-                this.child(
-                    Label::new(i18n_settings(cx, "named_themes"))
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground),
-                )
-                .child(
-                    h_flex()
-                        .gap_2()
-                        .flex_wrap()
-                        .children(theme_names.into_iter().map(|name| {
-                            let label = name.clone();
-                            Button::new(format!("theme-{name}"))
-                                .outline()
-                                .label(label)
-                                .on_click(move |_, _, cx| {
-                                    if apply_named_theme(&name, cx) {
-                                        let n = name.clone();
-                                        update_app_state_and_save(cx, "save_theme_name", move |state, _| {
-                                            state.set_theme_name(n.clone());
-                                        });
-                                    }
-                                })
-                        })),
-                )
-            })
+            .child(Label::new(i18n_settings(cx, "named_themes")))
+            .child(div().h(px(32.)).w(px(280.)).child(self.theme.clone()))
             .child(Label::new(i18n_settings(cx, "lang")))
             .child(self.locale.clone())
             .child(Label::new(i18n_settings(cx, "font_size")))

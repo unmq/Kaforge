@@ -131,8 +131,22 @@ impl NotificationAction {
 #[derive(Clone, Debug)]
 pub enum GlobalEvent {
     Notification(NotificationAction),
-    RouteChanged,
     UpdateDownloadProgress,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PersistedTab {
+    pub kind: String,
+    pub payload: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PersistedSession {
+    pub connection_id: String,
+    pub tabs: Vec<PersistedTab>,
+    pub active_tab: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -174,6 +188,10 @@ pub struct AppState {
     open_tabs: Vec<String>,
     #[serde(default)]
     active_tab: usize,
+    #[serde(default)]
+    open_sessions: Vec<PersistedSession>,
+    #[serde(default)]
+    active_connection_id: Option<String>,
     #[serde(skip)]
     download_progress: Option<(u64, u64)>,
     #[serde(skip)]
@@ -280,20 +298,6 @@ impl AppState {
             state.active_tab = 0;
         }
         Ok(state)
-    }
-
-    pub fn go_to(&mut self, route: Route, cx: &mut Context<Self>) {
-        self.route = route;
-        self.route_token = route.as_str().to_string();
-        if let Some(slot) = self.open_tabs.get_mut(self.active_tab) {
-            *slot = route.as_str().to_string();
-        }
-        cx.emit(GlobalEvent::RouteChanged);
-        cx.notify();
-    }
-
-    pub fn route(&self) -> Route {
-        self.route
     }
 
     pub fn theme(&self) -> Option<ThemeMode> {
@@ -460,17 +464,17 @@ impl AppState {
         }
     }
 
-    pub fn open_tabs(&self) -> &[String] {
-        &self.open_tabs
+    pub fn open_sessions(&self) -> &[PersistedSession] {
+        &self.open_sessions
     }
 
-    pub fn active_tab(&self) -> usize {
-        self.active_tab.min(self.open_tabs.len().saturating_sub(1))
+    pub fn active_connection_id(&self) -> Option<&str> {
+        self.active_connection_id.as_deref()
     }
 
-    pub fn set_open_tabs(&mut self, tabs: Vec<String>, active: usize) {
-        self.open_tabs = tabs;
-        self.active_tab = active;
+    pub fn set_open_sessions(&mut self, sessions: Vec<PersistedSession>, active: Option<String>) {
+        self.open_sessions = sessions;
+        self.active_connection_id = active;
     }
 
     pub fn download_progress(&self) -> Option<(u64, u64)> {

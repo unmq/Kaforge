@@ -15,7 +15,9 @@
 mod about;
 mod command_palette;
 mod content;
+pub(crate) mod docs;
 mod home;
+mod picker;
 mod secondary_window;
 mod settings;
 mod shortcuts_overlay;
@@ -26,6 +28,7 @@ mod update_dialog;
 pub use about::open_about_window;
 pub use command_palette::CommandPalette;
 pub use content::Content;
+pub use picker::open_connection_picker;
 pub use settings::open_settings_window;
 pub use shortcuts_overlay::ShortcutsOverlay;
 pub use sidebar::Sidebar;

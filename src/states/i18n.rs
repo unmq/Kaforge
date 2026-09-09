@@ -56,6 +56,10 @@ pub fn i18n_command_palette(cx: &App, key: &str) -> SharedString {
     let locale = cx.global::<GlobalStore>().read(cx).locale();
     t!(format!("command_palette.{key}"), locale = locale).into()
 }
+pub fn i18n_kafka(cx: &App, key: &str) -> SharedString {
+    let locale = cx.global::<GlobalStore>().read(cx).locale();
+    t!(format!("kafka.{key}"), locale = locale).into()
+}
 #[cfg(not(target_os = "linux"))]
 pub fn i18n_tray(cx: &App, key: &str) -> SharedString {
     let locale = cx.global::<GlobalStore>().read(cx).locale();

@@ -28,6 +28,7 @@ rust_i18n::i18n!(
 );
 
 mod assets;
+mod connections;
 mod constants;
 mod dialogs;
 mod error;
@@ -40,6 +41,7 @@ mod states;
 mod tray;
 mod views;
 mod window_setup;
+mod workspace;
 use crate::constants::APP_NAME;
 use crate::root::*;
 use crate::startup::*;

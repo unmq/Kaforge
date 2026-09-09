@@ -72,6 +72,11 @@ pub enum SettingsAction {
     Open,
 }
 
+#[derive(Clone, Copy, PartialEq, Debug, Deserialize, JsonSchema, Action)]
+pub enum OpenConnectionAction {
+    Open,
+}
+
 pub fn humanize_keystroke(keystroke: &str) -> String {
     let parts = keystroke.split('-');
     let mut display_text = String::new();
@@ -194,6 +199,12 @@ static HOT_KEYS: &[HotKey] = &[
         default: "secondary-,",
         reference: Some((GROUP_GENERAL, "settings")),
         bind: |keystroke: &str| KeyBinding::new(keystroke, SettingsAction::Open, None),
+    },
+    HotKey {
+        id: "open_connection",
+        default: "secondary-o",
+        reference: Some((GROUP_NAVIGATION, "open_connection")),
+        bind: |keystroke: &str| KeyBinding::new(keystroke, OpenConnectionAction::Open, None),
     },
     HotKey {
         id: "new_tab",

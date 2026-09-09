@@ -18,18 +18,22 @@ use crate::constants::WORKSPACE_TAB_BAR_HEIGHT;
 use crate::dialogs::*;
 use crate::helpers::{
     ConfigRecovery, CrashReport, DEFAULT_UI_FONT_SIZE, Delivery, DiagnosticsAction, DiagnosticsInput, MemuAction,
-    SettingsAction, UpdateInfo, WindowAction, WorkspaceTabAction, ZoomAction, download_and_verify, export_diagnostics,
-    fetch_latest_release, get_or_create_config_dir, humanize_keystroke, install_update, installer_requires_quit,
-    is_app_store_build,
+    OpenConnectionAction, SettingsAction, UpdateInfo, WindowAction, WorkspaceTabAction, ZoomAction,
+    download_and_verify, export_diagnostics, fetch_latest_release, get_or_create_config_dir, humanize_keystroke,
+    install_update, installer_requires_quit, is_app_store_build,
 };
 use crate::startup::{GIT_SHA, VERSION};
 use crate::states::{
-    GlobalEvent, GlobalStore, LocaleAction, NotificationAction, NotificationCategory, Route, SelectThemeAction,
-    ThemeAction, WindowPlacement, i18n_common, i18n_sidebar, i18n_update, notify, save_app_state,
-    update_app_state_and_save, update_app_state_and_save_quiet,
+    GlobalEvent, GlobalStore, LocaleAction, NotificationAction, NotificationCategory, SelectThemeAction, ThemeAction,
+    WindowPlacement, i18n_common, i18n_kafka, i18n_update, notify, save_app_state, update_app_state_and_save,
+    update_app_state_and_save_quiet,
 };
-use crate::views::{CommandPalette, Content, ShortcutsOverlay, Sidebar, TitleBar, open_settings_window};
+use crate::views::docs::DocKind;
+use crate::views::{
+    CommandPalette, Content, ShortcutsOverlay, Sidebar, TitleBar, open_connection_picker, open_settings_window,
+};
 use crate::window_setup::*;
+use crate::workspace::Workspace;
 use gpui::{
     Action, App, Bounds, Entity, MouseButton, Pixels, Point, SharedString, Subscription, Task, Window, div, prelude::*,
 };
@@ -49,12 +53,6 @@ use tracing::{error, info};
 
 const UI_ZOOM_MIN_PX: f32 = 12.0;
 const UI_ZOOM_MAX_PX: f32 = 20.0;
-pub(crate) const MAX_TABS: usize = 8;
-
-struct ContentTab {
-    route: Route,
-    content: Entity<Content>,
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Action)]
 pub(crate) enum TabAction {
@@ -88,10 +86,9 @@ pub struct AppRoot {
     pending_notification: Option<Notification>,
     last_bounds: Bounds<Pixels>,
     save_task: Option<Task<()>>,
+    workspace: Entity<Workspace>,
     sidebar: Entity<Sidebar>,
-    tabs: Vec<ContentTab>,
-    active_tab: usize,
-    pending_new_tab: bool,
+    empty: Entity<Content>,
     command_palette: Entity<CommandPalette>,
     shortcuts_overlay: Entity<ShortcutsOverlay>,
     title_bar: Option<Entity<TitleBar>>,
@@ -103,38 +100,14 @@ pub struct AppRoot {
     pub(crate) pending_config_recoveries: Vec<ConfigRecovery>,
     pub(crate) pending_crash: Option<CrashReport>,
     _global_sub: Subscription,
+    _workspace_sub: Subscription,
 }
 
 impl AppRoot {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let sidebar = cx.new(|cx| Sidebar::new(cx));
-        let content = cx.new(|cx| Content::new(window, cx));
-        let mut tabs = vec![ContentTab {
-            route: Route::Home,
-            content,
-        }];
-        let mut active_tab = 0;
-        let (saved_tabs, saved_active) = {
-            let store = cx.global::<GlobalStore>().read(cx);
-            (
-                store
-                    .open_tabs()
-                    .iter()
-                    .filter_map(|name| Route::from_name(name))
-                    .collect::<Vec<_>>(),
-                store.active_tab(),
-            )
-        };
-        if let Some(route) = saved_tabs.first() {
-            tabs[0].route = *route;
-        }
-        for route in saved_tabs.iter().skip(1) {
-            let content = cx.new(|cx| Content::new(window, cx));
-            tabs.push(ContentTab { route: *route, content });
-        }
-        if saved_active < tabs.len() {
-            active_tab = saved_active;
-        }
+        let workspace = cx.new(|cx| Workspace::new(window, cx));
+        let sidebar = cx.new(|cx| Sidebar::new(workspace.clone(), cx));
+        let empty = cx.new(|cx| Content::new(window, cx));
         let command_palette = cx.new(|cx| CommandPalette::new(window, cx));
         let shortcuts_overlay = cx.new(ShortcutsOverlay::new);
         let title_bar = Some(cx.new(|cx| TitleBar::new(cx)));
@@ -154,30 +127,17 @@ impl AppRoot {
                 this.pending_notification = Some(notification);
                 cx.notify();
             }
-            GlobalEvent::RouteChanged => {
-                let route = cx.global::<GlobalStore>().read(cx).route();
-                this.tabs[this.active_tab].route = route;
-                this.persist_tabs(cx);
-                cx.notify();
-            }
             GlobalEvent::UpdateDownloadProgress => cx.notify(),
         });
-
-        if !tabs.is_empty() {
-            let route = tabs[active_tab].route;
-            cx.global::<GlobalStore>()
-                .clone()
-                .update(cx, |state, cx| state.go_to(route, cx));
-        }
+        let _workspace_sub = cx.observe(&workspace, |_, _, cx| cx.notify());
 
         Self {
             pending_notification: None,
             last_bounds: Bounds::default(),
             save_task: None,
+            workspace,
             sidebar,
-            tabs,
-            active_tab,
-            pending_new_tab: false,
+            empty,
             command_palette,
             shortcuts_overlay,
             title_bar,
@@ -189,100 +149,33 @@ impl AppRoot {
             pending_config_recoveries: Vec::new(),
             pending_crash: None,
             _global_sub,
+            _workspace_sub,
         }
-    }
-
-    fn persist_tabs(&self, cx: &mut Context<Self>) {
-        let tabs: Vec<String> = self.tabs.iter().map(|tab| tab.route.as_str().to_string()).collect();
-        let active = self.active_tab;
-        update_app_state_and_save_quiet(cx, "save_open_tabs", move |state, _| {
-            state.set_open_tabs(tabs.clone(), active)
-        });
     }
 
     fn activate_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if ix == self.active_tab || ix >= self.tabs.len() {
-            return;
-        }
-        self.tabs[self.active_tab].route = cx.global::<GlobalStore>().read(cx).route();
-        self.active_tab = ix;
-        let route = self.tabs[ix].route;
-        cx.global::<GlobalStore>()
-            .clone()
-            .update(cx, |state, cx| state.go_to(route, cx));
-        self.persist_tabs(cx);
-        cx.notify();
+        self.workspace.update(cx, |ws, cx| ws.activate_tab(ix, cx));
     }
 
-    fn new_tab(&mut self, cx: &mut Context<Self>) {
-        if self.tabs.len() >= MAX_TABS {
-            return;
-        }
-        self.pending_new_tab = true;
-        cx.notify();
+    fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.workspace
+            .update(cx, |ws, cx| ws.open_doc(DocKind::Consumer, None, window, cx));
     }
 
     fn close_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if self.tabs.len() <= 1 || ix >= self.tabs.len() {
-            return;
-        }
-        let was_active = ix == self.active_tab;
-        self.tabs.remove(ix);
-        if self.active_tab > ix {
-            self.active_tab -= 1;
-        } else if was_active {
-            self.active_tab = ix.min(self.tabs.len() - 1);
-            let route = self.tabs[self.active_tab].route;
-            cx.global::<GlobalStore>()
-                .clone()
-                .update(cx, |state, cx| state.go_to(route, cx));
-        }
-        self.persist_tabs(cx);
-        cx.notify();
+        self.workspace.update(cx, |ws, cx| ws.close_tab(ix, cx));
     }
 
     fn close_others(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if ix >= self.tabs.len() || self.tabs.len() <= 1 {
-            return;
-        }
-        let keep = self.tabs.remove(ix);
-        self.tabs.clear();
-        self.tabs.push(keep);
-        self.active_tab = 0;
-        let route = self.tabs[0].route;
-        cx.global::<GlobalStore>()
-            .clone()
-            .update(cx, |state, cx| state.go_to(route, cx));
-        self.persist_tabs(cx);
-        cx.notify();
+        self.workspace.update(cx, |ws, cx| ws.close_other_tabs(ix, cx));
     }
 
     fn close_right(&mut self, ix: usize, cx: &mut Context<Self>) {
-        if ix + 1 >= self.tabs.len() {
-            return;
-        }
-        let active_closed = self.active_tab > ix;
-        self.tabs.truncate(ix + 1);
-        if active_closed {
-            self.active_tab = ix;
-            let route = self.tabs[ix].route;
-            cx.global::<GlobalStore>()
-                .clone()
-                .update(cx, |state, cx| state.go_to(route, cx));
-        }
-        self.persist_tabs(cx);
-        cx.notify();
+        self.workspace.update(cx, |ws, cx| ws.close_tabs_to_right(ix, cx));
     }
 
     fn move_tab(&mut self, from: usize, to: usize, cx: &mut Context<Self>) {
-        if from == to || from >= self.tabs.len() || to >= self.tabs.len() {
-            return;
-        }
-        let tab = self.tabs.remove(from);
-        self.tabs.insert(to, tab);
-        self.active_tab = moved_active_index(self.active_tab, from, to);
-        self.persist_tabs(cx);
-        cx.notify();
+        self.workspace.update(cx, |ws, cx| ws.move_tab(from, to, cx));
     }
 
     fn export_diagnostics(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -521,22 +414,28 @@ impl AppRoot {
         self.shortcuts_overlay.update(cx, |overlay, cx| overlay.toggle(cx));
     }
 
-    fn tab_title(&self, tab: &ContentTab, cx: &App) -> SharedString {
-        match tab.route {
-            Route::Home => i18n_sidebar(cx, "home"),
-            Route::Settings => i18n_sidebar(cx, "preferences"),
-        }
+    fn tab_titles(&self, cx: &App) -> (Vec<SharedString>, usize) {
+        let ws = self.workspace.read(cx);
+        let Some(session) = ws.active_session() else {
+            return (Vec::new(), 0);
+        };
+        let titles = session
+            .tabs
+            .iter()
+            .map(|tab| format!("{} · {}", i18n_kafka(cx, tab.kind.as_str()), session.name).into())
+            .collect();
+        (titles, session.active_tab)
     }
 
     fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        if self.tabs.len() <= 1 {
+        let (titles, active_tab) = self.tab_titles(cx);
+        if titles.is_empty() {
             return None;
         }
         let border = cx.theme().border;
         let foreground = cx.theme().foreground;
         let active_bg = foreground.alpha(0.1);
         let muted = cx.theme().muted_foreground;
-        let titles: Vec<SharedString> = self.tabs.iter().map(|tab| self.tab_title(tab, cx)).collect();
         let strip = h_flex()
             .w_full()
             .h(WORKSPACE_TAB_BAR_HEIGHT)
@@ -547,7 +446,7 @@ impl AppRoot {
             .border_b_1()
             .border_color(border)
             .children(titles.into_iter().enumerate().map(|(ix, title)| {
-                let is_active = ix == self.active_tab;
+                let is_active = ix == active_tab;
                 let shortcut: SharedString = humanize_keystroke(&format!("cmd-{}", ix + 1)).into();
                 let shortcut_color = if is_active { muted } else { muted.alpha(0.6) };
                 let title_color = if is_active { foreground } else { muted };
@@ -608,7 +507,7 @@ impl AppRoot {
     }
 }
 
-fn moved_active_index(active: usize, from: usize, to: usize) -> usize {
+pub(crate) fn moved_active_index(active: usize, from: usize, to: usize) -> usize {
     if active == from {
         to
     } else if from < active && to >= active {
@@ -659,30 +558,26 @@ impl Render for AppRoot {
         if let Some(font_size) = cx.global::<GlobalStore>().read(cx).font_rem_px() {
             window.set_rem_size(font_size);
         }
-        if std::mem::take(&mut self.pending_new_tab) {
-            let content = cx.new(|cx| Content::new(window, cx));
-            self.tabs.push(ContentTab {
-                route: Route::Home,
-                content,
-            });
-            self.active_tab = self.tabs.len() - 1;
-            cx.global::<GlobalStore>()
-                .clone()
-                .update(cx, |state, cx| state.go_to(Route::Home, cx));
-            self.persist_tabs(cx);
-        }
 
         let tab_bar = self.render_tab_bar(cx);
-        let active_content = self.tabs[self.active_tab].content.clone();
+        let active_content = self
+            .workspace
+            .read(cx)
+            .active_session()
+            .and_then(|s| s.tabs.get(s.active_tab).map(|t| t.pane.clone().into_any_element()))
+            .unwrap_or_else(|| self.empty.clone().into_any_element());
 
         v_flex()
             .size_full()
             .on_action(cx.listener(|this, _: &DiagnosticsAction, window, cx| {
                 this.export_diagnostics(window, cx);
             }))
-            .on_action(cx.listener(|this, e: &WorkspaceTabAction, _window, cx| match *e {
-                WorkspaceTabAction::New => this.new_tab(cx),
+            .on_action(cx.listener(|this, e: &WorkspaceTabAction, window, cx| match *e {
+                WorkspaceTabAction::New => this.new_tab(window, cx),
                 WorkspaceTabAction::Select(ix) => this.activate_tab(ix, cx),
+            }))
+            .on_action(cx.listener(|this, _: &OpenConnectionAction, window, cx| {
+                open_connection_picker(this.workspace.clone(), window, cx);
             }))
             .on_action(cx.listener(|this, e: &TabAction, _window, cx| match *e {
                 TabAction::Close(ix) => this.close_tab(ix, cx),
@@ -750,8 +645,20 @@ impl Render for AppRoot {
             // ⌘W closes the active workspace tab while more than one is open.
             // Otherwise propagate so the app-level handler can hide / close.
             .on_action(cx.listener(|this, e: &MemuAction, _window, cx| {
-                if matches!(e, MemuAction::Close) && this.tabs.len() > 1 {
-                    this.close_tab(this.active_tab, cx);
+                let tab_count = this
+                    .workspace
+                    .read(cx)
+                    .active_session()
+                    .map(|s| s.tabs.len())
+                    .unwrap_or(0);
+                if matches!(e, MemuAction::Close) && tab_count > 0 {
+                    let ix = this
+                        .workspace
+                        .read(cx)
+                        .active_session()
+                        .map(|s| s.active_tab)
+                        .unwrap_or(0);
+                    this.close_tab(ix, cx);
                 } else {
                     cx.propagate();
                 }

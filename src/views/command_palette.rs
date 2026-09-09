@@ -14,7 +14,7 @@
 
 //! ⌘K command palette: fuzzy-ish search over navigation commands.
 
-use crate::helpers::{SettingsAction, ShortcutsAction, UpdateAction, WorkspaceTabAction};
+use crate::helpers::{OpenConnectionAction, SettingsAction, ShortcutsAction, UpdateAction, WorkspaceTabAction};
 use crate::states::i18n_command_palette;
 use crate::views::open_about_window;
 use gpui::{
@@ -33,6 +33,7 @@ enum PaletteCommand {
     About,
     Shortcuts,
     NewTab,
+    OpenConnection,
     CheckUpdates,
 }
 
@@ -116,6 +117,7 @@ impl CommandPalette {
             PaletteCommand::About => open_about_window(cx),
             PaletteCommand::Shortcuts => cx.dispatch_action(&ShortcutsAction::Toggle),
             PaletteCommand::NewTab => cx.dispatch_action(&WorkspaceTabAction::New),
+            PaletteCommand::OpenConnection => cx.dispatch_action(&OpenConnectionAction::Open),
             PaletteCommand::CheckUpdates => cx.dispatch_action(&UpdateAction::Check),
         }
         self.close(window, cx);
@@ -147,6 +149,10 @@ impl Render for CommandPalette {
             item(i18n_command_palette(cx, "about"), PaletteCommand::About),
             item(i18n_command_palette(cx, "shortcuts"), PaletteCommand::Shortcuts),
             item(i18n_command_palette(cx, "new_tab"), PaletteCommand::NewTab),
+            item(
+                i18n_command_palette(cx, "open_connection"),
+                PaletteCommand::OpenConnection,
+            ),
             item(i18n_command_palette(cx, "check_updates"), PaletteCommand::CheckUpdates),
         ];
         let order = self.ranked(cx);

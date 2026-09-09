@@ -1,0 +1,47 @@
+// Copyright 2026 xhofe.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use snafu::Snafu;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(display("{message}"))]
+    Message { message: String },
+    #[snafu(display("Kafka: {source}"))]
+    Kafka { source: rdkafka::error::KafkaError },
+    #[snafu(display("IO: {source}"))]
+    Io { source: std::io::Error },
+}
+
+impl Error {
+    pub fn msg(message: impl Into<String>) -> Self {
+        Self::Message {
+            message: message.into(),
+        }
+    }
+}
+
+impl From<rdkafka::error::KafkaError> for Error {
+    fn from(source: rdkafka::error::KafkaError) -> Self {
+        Self::Kafka { source }
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(source: std::io::Error) -> Self {
+        Self::Io { source }
+    }
+}
+
+pub type Result<T, E = Error> = std::result::Result<T, E>;

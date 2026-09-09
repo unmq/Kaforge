@@ -1,0 +1,38 @@
+[package]
+name = "kaforge-kafka"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Kafka admin, produce, consume, and Schema Registry client for Kaforge."
+
+[dependencies]
+apache-avro = { version = "0.21", default-features = false }
+aws-config = { version = "1", default-features = false, features = ["rt-tokio", "credentials-process", "sso"] }
+aws-msk-iam-sasl-signer = "1"
+aws-types = "1"
+base64 = "0.22"
+chrono = { workspace = true }
+futures = "0.3"
+rdkafka = { version = "0.38", default-features = false, features = [
+    "cmake-build",
+    "ssl",
+    "sasl",
+    "gssapi",
+    "libz",
+    "zstd",
+] }
+russh = "0.54"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+snafu = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "io-util", "macros"] }
+tracing = { workspace = true }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+uuid = { workspace = true }
+
+[lints.clippy]
+unwrap_used = "deny"

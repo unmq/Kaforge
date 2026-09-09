@@ -77,6 +77,8 @@ tracing-subscriber = { version = "0.3.23", features = ["local-time"] }
 tracing-appender = "0.2.5"
 uuid = { workspace = true }
 kaforge-ui = { path = "crates/kaforge-ui" }
+kaforge-kafka = { path = "crates/kaforge-kafka" }
+serde_yaml = "0.9"
 snafu = { workspace = true }
 ureq = { version = "3", default-features = false, features = [
     "rustls",

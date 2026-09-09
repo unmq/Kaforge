@@ -2,6 +2,7 @@
 cancel = "Cancel"
 copied = "Copied"
 delete = "Delete"
+more = "More"
 tab_close = "Close Tab"
 tab_close_others = "Close Other Tabs"
 tab_close_right = "Close Tabs to the Right"

@@ -15,14 +15,16 @@
 use crate::connections;
 use crate::states::{NotificationAction, dialog_button_props, i18n_common, i18n_kafka, notify};
 use crate::workspace::Workspace;
-use gpui::{App, ClipboardItem, Div, Entity, SharedString, WeakEntity, Window, div, prelude::*, px};
+use gpui::{App, ClipboardItem, Div, Entity, MouseButton, SharedString, WeakEntity, Window, div, prelude::*, px};
 use gpui_kit::component::{
-    ActiveTheme, StyledExt, WindowExt,
+    ActiveTheme, IconName, Sizable, WindowExt,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
     h_flex,
     input::{Input, InputState, Textarea, TextareaState},
     label::Label,
+    list::ListItem,
+    menu::{DropdownMenu, PopupMenuItem},
     switch::Switch,
     v_flex,
 };
@@ -32,6 +34,7 @@ use kaforge_ui::{Dialog, Select};
 struct SavedPicker {
     workspace: WeakEntity<Workspace>,
     yaml: Entity<TextareaState>,
+    yaml_open: bool,
 }
 
 impl SavedPicker {
@@ -39,6 +42,7 @@ impl SavedPicker {
         Self {
             workspace: workspace.downgrade(),
             yaml: cx.new(|cx| TextareaState::new(window, cx)),
+            yaml_open: false,
         }
     }
 
@@ -117,76 +121,168 @@ impl SavedPicker {
             Err(e) => notify(cx, NotificationAction::new_error(e.to_string().into())),
         }
     }
+
+    fn export_toml(&self, cx: &mut Context<Self>) {
+        match connections::export_toml(&self.saved(cx)) {
+            Ok(text) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
+                let msg = i18n_common(cx, "copied");
+                notify(cx, NotificationAction::new_success(msg));
+            }
+            Err(e) => notify(cx, NotificationAction::new_error(e.to_string().into())),
+        }
+    }
+
+    fn open_new_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(ws) = self.workspace.upgrade() else {
+            return;
+        };
+        window.close_dialog(cx);
+        open_connection_form(ws, None, window, cx);
+    }
+}
+
+fn saved_row(
+    picker: Entity<SavedPicker>,
+    cfg: ConnectionConfig,
+    test: SharedString,
+    edit: SharedString,
+    delete: SharedString,
+    more: SharedString,
+    cx: &App,
+) -> impl IntoElement {
+    let id = cfg.id.clone();
+    let open_id = id.clone();
+    let menu_id = id.clone();
+    let name = SharedString::from(cfg.display_name().to_string());
+    let bootstrap = SharedString::from(cfg.bootstrap_servers);
+    ListItem::new(format!("saved-{id}"))
+        .rounded(cx.theme().radius)
+        .on_click({
+            let picker = picker.clone();
+            move |_, window, cx| {
+                picker.update(cx, |this, cx| this.open_id(&open_id, window, cx));
+            }
+        })
+        .suffix(move |_, _cx| {
+            div()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    Button::new(format!("saved-more-{id}"))
+                        .ghost()
+                        .icon(IconName::Ellipsis)
+                        .xsmall()
+                        .tooltip(more.clone())
+                        .dropdown_menu({
+                            let picker = picker.clone();
+                            let menu_id = menu_id.clone();
+                            let test = test.clone();
+                            let edit = edit.clone();
+                            let delete = delete.clone();
+                            move |menu, _, _| {
+                                menu.item(PopupMenuItem::new(test.clone()).on_click({
+                                    let picker = picker.clone();
+                                    let id = menu_id.clone();
+                                    move |_, _, cx| {
+                                        picker.update(cx, |this, cx| this.test_id(&id, cx));
+                                    }
+                                }))
+                                .item(PopupMenuItem::new(edit.clone()).on_click({
+                                    let picker = picker.clone();
+                                    let id = menu_id.clone();
+                                    move |_, window, cx| {
+                                        picker.update(cx, |this, cx| this.edit_id(&id, window, cx));
+                                    }
+                                }))
+                                .item(PopupMenuItem::new(delete.clone()).on_click({
+                                    let picker = picker.clone();
+                                    let id = menu_id.clone();
+                                    move |_, _, cx| {
+                                        picker.update(cx, |this, cx| this.delete_id(&id, cx));
+                                    }
+                                }))
+                            }
+                        }),
+                )
+        })
+        .child(
+            v_flex()
+                .min_w_0()
+                .w_full()
+                .gap_0()
+                .child(Label::new(name))
+                .child(Label::new(bootstrap).text_xs().text_color(cx.theme().muted_foreground)),
+        )
 }
 
 impl Render for SavedPicker {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let saved = self.saved(cx);
+        let picker = cx.entity();
+        let test = i18n_kafka(cx, "test");
+        let edit = i18n_kafka(cx, "edit");
+        let delete = i18n_common(cx, "delete");
+        let more = i18n_common(cx, "more");
+        let muted = cx.theme().muted_foreground;
         v_flex()
             .gap_3()
             .w_full()
-            .when(saved.is_empty(), |this| {
-                this.child(Label::new(i18n_kafka(cx, "empty_saved")).text_sm())
-            })
-            .children(saved.into_iter().map(|c| {
-                let id = c.id.clone();
-                let open_id = id.clone();
-                let edit_id = id.clone();
-                let test_id = id.clone();
-                let del_id = id.clone();
-                let label = format!("{}  {}", c.display_name(), c.bootstrap_servers);
+            .child(
                 h_flex()
                     .w_full()
-                    .gap_1()
-                    .child(
-                        Button::new(format!("saved-conn-{id}"))
-                            .ghost()
-                            .label(label)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_id(&open_id, window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new(format!("test-{id}"))
-                            .ghost()
-                            .label(i18n_kafka(cx, "test"))
-                            .on_click(cx.listener(move |this, _, _, cx| this.test_id(&test_id, cx))),
-                    )
-                    .child(
-                        Button::new(format!("edit-{id}"))
-                            .ghost()
-                            .label(i18n_kafka(cx, "edit"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.edit_id(&edit_id, window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new(format!("del-{id}"))
-                            .ghost()
-                            .danger()
-                            .label(i18n_common(cx, "delete"))
-                            .on_click(cx.listener(move |this, _, _, cx| this.delete_id(&del_id, cx))),
-                    )
-            }))
-            .child(
-                Button::new("new-conn")
-                    .primary()
-                    .label(i18n_kafka(cx, "new_title"))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        let Some(ws) = this.workspace.upgrade() else {
-                            return;
-                        };
-                        window.close_dialog(cx);
-                        open_connection_form(ws, None, window, cx);
-                    })),
-            )
-            .child(div().h(px(1.)).bg(cx.theme().border))
-            .child(Label::new(i18n_kafka(cx, "import_yaml")).font_bold())
-            .child(Label::new(i18n_kafka(cx, "yaml_placeholder")).text_xs())
-            .child(Textarea::new(&self.yaml).h(px(88.)))
-            .child(
-                h_flex()
+                    .items_center()
+                    .justify_between()
                     .gap_2()
+                    .child(
+                        Button::new("new-conn")
+                            .outline()
+                            .label(i18n_kafka(cx, "new_title"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.open_new_form(window, cx);
+                            })),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                Button::new("import-toggle")
+                                    .ghost()
+                                    .label(i18n_kafka(cx, "import_yaml"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.yaml_open = !this.yaml_open;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                Button::new("export")
+                                    .ghost()
+                                    .label(i18n_kafka(cx, "export"))
+                                    .on_click(cx.listener(|this, _, _, cx| this.export_toml(cx))),
+                            ),
+                    ),
+            )
+            .when(saved.is_empty(), |this| {
+                this.child(Label::new(i18n_kafka(cx, "empty_saved")).text_sm().text_color(muted))
+            })
+            .children(saved.into_iter().map(|c| {
+                saved_row(
+                    picker.clone(),
+                    c,
+                    test.clone(),
+                    edit.clone(),
+                    delete.clone(),
+                    more.clone(),
+                    cx,
+                )
+            }))
+            .when(self.yaml_open, |this| {
+                this.child(div().h(px(1.)).bg(cx.theme().border))
+                    .child(
+                        Label::new(i18n_kafka(cx, "yaml_placeholder"))
+                            .text_xs()
+                            .text_color(muted),
+                    )
+                    .child(Textarea::new(&self.yaml).h(px(88.)))
                     .child(
                         Button::new("import")
                             .label(i18n_kafka(cx, "import_yaml"))
@@ -195,21 +291,7 @@ impl Render for SavedPicker {
                                 this.import_yaml(text, cx);
                             })),
                     )
-                    .child(
-                        Button::new("export")
-                            .label(i18n_kafka(cx, "export"))
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                match connections::export_toml(&this.saved(cx)) {
-                                    Ok(text) => {
-                                        cx.write_to_clipboard(ClipboardItem::new_string(text));
-                                        let msg = i18n_common(cx, "copied");
-                                        notify(cx, NotificationAction::new_success(msg));
-                                    }
-                                    Err(e) => notify(cx, NotificationAction::new_error(e.to_string().into())),
-                                }
-                            })),
-                    ),
-            )
+            })
     }
 }
 
@@ -512,10 +594,8 @@ impl Render for ConnectionForm {
 pub fn open_connection_picker(workspace: Entity<Workspace>, window: &mut Window, cx: &mut App) {
     let view = cx.new(|cx| SavedPicker::new(workspace, window, cx));
     Dialog::new(i18n_kafka(cx, "picker_title"))
-        .w(px(560.))
+        .w(px(480.))
         .max_h(px(520.))
-        .button_props(dialog_button_props(cx))
-        .ok_text(i18n_common(cx, "cancel"))
         .child(move || view.clone())
         .overlay_closable(true)
         .open(window, cx);
